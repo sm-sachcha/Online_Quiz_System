@@ -341,7 +341,7 @@
     let participants = [];
     let hasLeft = false;
     let heartbeatInterval = null;
-    let isActive = true;
+    let reconnectAttempts = 0;
 
     // Function to leave the lobby
     function leaveLobby() {
@@ -370,13 +370,34 @@
                 'X-CSRF-TOKEN': '{{ csrf_token() }}',
                 'Content-Type': 'application/json'
             }
-        }).catch(console.error);
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('Heartbeat sent successfully');
+                reconnectAttempts = 0;
+            } else {
+                console.log('Heartbeat failed');
+                reconnectAttempts++;
+                if (reconnectAttempts > 5) {
+                    console.log('Too many failed heartbeats, leaving lobby');
+                    leaveLobby();
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Heartbeat error:', error);
+            reconnectAttempts++;
+            if (reconnectAttempts > 5) {
+                leaveLobby();
+            }
+        });
     }
 
-    // Start heartbeat (every 15 seconds)
+    // Start heartbeat interval (every 20 seconds)
     function startHeartbeat() {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
-        heartbeatInterval = setInterval(sendHeartbeat, 15000);
+        heartbeatInterval = setInterval(sendHeartbeat, 20000);
         sendHeartbeat(); // Send immediately
     }
 
@@ -387,7 +408,7 @@
         }
     }
 
-    // Handle page unload
+    // Handle page unload - only leave when actually leaving the page
     window.addEventListener('beforeunload', function() {
         const participantStatus = '{{ $participant->status }}';
         if (participantStatus === 'joined' && !hasLeft) {
@@ -396,21 +417,25 @@
         stopHeartbeat();
     });
     
-    // Handle page visibility change
+    // Handle page visibility change - don't leave on tab switch
+    let inactivityTimer = null;
     document.addEventListener('visibilitychange', function() {
         if (document.hidden) {
+            // Tab is hidden, but don't leave immediately
+            // Just slow down heartbeat
             if (heartbeatInterval) {
                 clearInterval(heartbeatInterval);
                 heartbeatInterval = setInterval(sendHeartbeat, 30000);
             }
-            isActive = false;
         } else {
+            // Tab is active again, resume normal heartbeat
             if (heartbeatInterval) {
                 clearInterval(heartbeatInterval);
-                heartbeatInterval = setInterval(sendHeartbeat, 15000);
+                heartbeatInterval = setInterval(sendHeartbeat, 20000);
             }
-            isActive = true;
+            // Send immediate heartbeat to confirm still active
             sendHeartbeat();
+            // Refresh participants list
             loadParticipants();
         }
     });
@@ -539,24 +564,11 @@
         div.textContent = text;
         return div.innerHTML;
     }
-    
-    function showLoading() {
-        const spinner = document.createElement('div');
-        spinner.className = 'spinner-overlay';
-        spinner.innerHTML = '<div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status"></div>';
-        document.body.appendChild(spinner);
-        return spinner;
-    }
-    
-    function hideLoading(spinner) {
-        if (spinner) spinner.remove();
-    }
 
-    // JOIN BUTTON HANDLER
+    // Join button handler
     const joinBtn = document.getElementById('joinQuizBtn');
     if (joinBtn) {
         joinBtn.addEventListener('click', function() {
-            const spinner = showLoading();
             fetch(`/user/quiz/lobby/${quizId}/join`, {
                 method: 'POST',
                 headers: {
@@ -565,23 +577,17 @@
                 }
             })
             .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    window.location.reload();
-                } else {
-                    alert('Failed to join lobby. Please try again.');
-                    hideLoading(spinner);
-                }
+            .then(() => {
+                window.location.reload();
             })
             .catch(error => {
                 console.error('Error joining:', error);
                 alert('Failed to join lobby. Please try again.');
-                hideLoading(spinner);
             });
         });
     }
 
-    // START QUIZ BUTTON HANDLER
+    // Start quiz button handler
     const startBtn = document.getElementById('startQuizBtn');
     if (startBtn) {
         startBtn.addEventListener('click', function() {

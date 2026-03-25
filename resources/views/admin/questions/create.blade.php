@@ -41,9 +41,6 @@
     .btn-correct-selected:hover {
         background-color: #218838 !important;
     }
-    .btn-correct-selected i {
-        margin-right: 5px;
-    }
     .remove-option-btn {
         background-color: #dc3545;
         color: white;
@@ -62,12 +59,6 @@
         opacity: 1;
         transform: scale(1.1);
         background-color: #c82333;
-    }
-    .multiple-correct-info {
-        background-color: #fff3cd;
-        border-left: 4px solid #ffc107;
-        padding: 10px;
-        margin-bottom: 15px;
     }
     .option-card .card-body {
         padding: 12px 15px !important;
@@ -95,11 +86,6 @@
         outline: none;
         border-color: #80bdff;
         box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
-    }
-    .action-buttons {
-        display: flex;
-        gap: 8px;
-        align-items: center;
     }
 </style>
 
@@ -204,6 +190,19 @@
                         @error('explanation')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
+                    </div>
+
+                    <!-- Show Answer Option -->
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="show_answer" name="show_answer" value="1" checked>
+                            <label class="form-check-label" for="show_answer">
+                                <i class="fas fa-eye"></i> Show correct answer to users after they answer
+                            </label>
+                            <div class="form-text text-muted">
+                                If enabled, users will see the correct answer after they submit their response.
+                            </div>
+                        </div>
                     </div>
 
                     <div class="alert alert-warning" id="warning-alert">

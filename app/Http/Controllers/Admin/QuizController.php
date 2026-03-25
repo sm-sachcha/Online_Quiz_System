@@ -203,9 +203,21 @@ class QuizController extends Controller
             abort(403, 'You do not have permission to duplicate this quiz.');
         }
         
+        // Generate unique title and slug
+        $newTitle = $quiz->title . ' (Copy)';
+        $newSlug = Str::slug($newTitle);
+        
+        // Check if slug already exists and make it unique
+        $counter = 1;
+        while (Quiz::where('slug', $newSlug)->exists()) {
+            $newTitle = $quiz->title . ' (Copy ' . $counter . ')';
+            $newSlug = Str::slug($newTitle);
+            $counter++;
+        }
+        
         $newQuiz = $quiz->replicate();
-        $newQuiz->title = $quiz->title . ' (Copy)';
-        $newQuiz->slug = Str::slug($newQuiz->title);
+        $newQuiz->title = $newTitle;
+        $newQuiz->slug = $newSlug;
         $newQuiz->created_by = Auth::id();
         $newQuiz->is_published = false;
         $newQuiz->save();
@@ -225,7 +237,7 @@ class QuizController extends Controller
         $newQuiz->updateTotals();
 
         return redirect()->route('admin.quizzes.edit', $newQuiz)
-            ->with('success', 'Quiz duplicated successfully.');
+            ->with('success', 'Quiz duplicated successfully!');
     }
     
     public function togglePublish(Quiz $quiz)

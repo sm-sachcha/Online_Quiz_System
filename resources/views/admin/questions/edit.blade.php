@@ -3,19 +3,52 @@
 @section('title', 'Edit Question')
 
 @section('content')
+<style>
+    .correct-option {
+        border-left: 4px solid #28a745 !important;
+        background-color: #e8f5e9 !important;
+    }
+    .option-card {
+        transition: all 0.3s ease;
+        margin-bottom: 10px;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+    }
+    .btn-set-correct {
+        background-color: #6c757d;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+    .btn-correct-selected {
+        background-color: #28a745 !important;
+    }
+    .remove-option-btn {
+        background-color: #dc3545;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        width: 32px;
+        height: 32px;
+        cursor: pointer;
+    }
+</style>
+
 <div class="row">
     <div class="col-md-8 mx-auto">
         <div class="card">
-            <div class="card-header">
+            <div class="card-header bg-primary text-white">
                 <h5 class="mb-0"><i class="fas fa-edit"></i> Edit Question</h5>
             </div>
             <div class="card-body">
-                <form action="{{ route('admin.quizzes.questions.update', [$quiz, $question]) }}" method="POST">
+                <form action="{{ route('admin.quizzes.questions.update', [$quiz, $question]) }}" method="POST" id="questionForm">
                     @csrf
                     @method('PUT')
 
                     <div class="mb-3">
-                        <label for="question_text" class="form-label">Question <span class="text-danger">*</span></label>
+                        <label for="question_text" class="form-label">Question Text <span class="text-danger">*</span></label>
                         <textarea class="form-control @error('question_text') is-invalid @enderror" 
                                   id="question_text" name="question_text" rows="3" required>{{ old('question_text', $question->question_text) }}</textarea>
                         @error('question_text')
@@ -41,7 +74,7 @@
                         <div class="col-md-4 mb-3">
                             <label for="time_seconds" class="form-label">Time (seconds) <span class="text-danger">*</span></label>
                             <input type="number" class="form-control @error('time_seconds') is-invalid @enderror" 
-                                   id="time_seconds" name="time_seconds" value="{{ old('time_seconds', $question->time_seconds) }}" min="5" max="300" required>
+                                   id="time_seconds" name="time_seconds" value="{{ old('time_seconds', $question->time_seconds) }}" min="10" max="300" required>
                             @error('time_seconds')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
@@ -49,28 +82,40 @@
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label">Options <span class="text-danger">*</span></label>
-                        @foreach($question->options as $index => $option)
-                            <div class="row mb-2">
-                                <div class="col-md-1">
-                                    <div class="form-check mt-2">
-                                        <input class="form-check-input" type="checkbox" 
-                                               name="options[{{ $index }}][is_correct]" 
-                                               {{ $option->is_correct ? 'checked' : '' }}>
+                        <label class="form-label">Answer Options</label>
+                        <div id="options-list">
+                            @foreach($question->options as $index => $option)
+                                <div class="option-card card mb-2 {{ $option->is_correct ? 'correct-option' : '' }}">
+                                    <div class="card-body">
+                                        <div class="row align-items-center">
+                                            <div class="col-auto">
+                                                <span class="badge bg-secondary">{{ chr(65 + $index) }}</span>
+                                            </div>
+                                            <div class="col">
+                                                <input type="text" class="form-control" 
+                                                       name="options[{{ $index }}][text]" 
+                                                       value="{{ $option->option_text }}" required>
+                                            </div>
+                                            <div class="col-auto">
+                                                <button type="button" class="btn btn-sm set-correct-btn {{ $option->is_correct ? 'btn-correct-selected' : 'btn-secondary' }}" 
+                                                        data-option-index="{{ $index }}">
+                                                    {{ $option->is_correct ? '✓ Correct' : 'Set Correct' }}
+                                                </button>
+                                            </div>
+                                            <div class="col-auto">
+                                                <button type="button" class="remove-option-btn">✕</button>
+                                            </div>
+                                        </div>
+                                        <input type="hidden" name="options[{{ $index }}][id]" value="{{ $option->id }}">
+                                        <input type="hidden" name="options[{{ $index }}][is_correct]" value="{{ $option->is_correct ? '1' : '0' }}" class="correct-value">
                                     </div>
                                 </div>
-                                <div class="col-md-10">
-                                    <input type="hidden" name="options[{{ $index }}][id]" value="{{ $option->id }}">
-                                    <input type="text" class="form-control" name="options[{{ $index }}][text]" 
-                                           value="{{ $option->option_text }}" required>
-                                </div>
-                                <div class="col-md-1">
-                                    <button type="button" class="btn btn-sm btn-danger remove-option" data-id="{{ $option->id }}">
-                                        <i class="fas fa-times"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        @endforeach
+                            @endforeach
+                        </div>
+                        
+                        <button type="button" class="btn btn-sm btn-success mt-2" id="add-option">
+                            <i class="fas fa-plus"></i> Add Option
+                        </button>
                     </div>
 
                     <div class="mb-3">
@@ -80,6 +125,20 @@
                         @error('explanation')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
+                    </div>
+
+                    <!-- Show Answer Option -->
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="show_answer" name="show_answer" value="1" 
+                                   {{ old('show_answer', $question->show_answer) ? 'checked' : '' }}>
+                            <label class="form-check-label" for="show_answer">
+                                <i class="fas fa-eye"></i> Show correct answer to users after they answer
+                            </label>
+                            <div class="form-text text-muted">
+                                If enabled, users will see the correct answer after they submit their response.
+                            </div>
+                        </div>
                     </div>
 
                     <div class="alert alert-warning">
@@ -103,10 +162,129 @@
 
 @push('scripts')
 <script>
-    document.querySelectorAll('.remove-option').forEach(btn => {
-        btn.addEventListener('click', function() {
-            this.closest('.row').remove();
+    let optionCounter = {{ $question->options->count() }};
+    
+    function addOption(optionText = '', isCorrect = false) {
+        optionCounter++;
+        const optionDiv = document.createElement('div');
+        optionDiv.className = 'option-card card mb-2';
+        optionDiv.innerHTML = `
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-auto">
+                        <span class="badge bg-secondary">${String.fromCharCode(64 + optionCounter)}</span>
+                    </div>
+                    <div class="col">
+                        <input type="text" class="form-control" 
+                               name="options[${optionCounter}][text]" 
+                               value="${escapeHtml(optionText)}" 
+                               placeholder="Enter option text" required>
+                    </div>
+                    <div class="col-auto">
+                        <button type="button" class="btn btn-sm btn-secondary set-correct-btn" data-option-index="${optionCounter}">
+                            Set Correct
+                        </button>
+                    </div>
+                    <div class="col-auto">
+                        <button type="button" class="remove-option-btn">✕</button>
+                    </div>
+                </div>
+                <input type="hidden" name="options[${optionCounter}][is_correct]" value="${isCorrect ? '1' : '0'}" class="correct-value">
+            </div>
+        `;
+        
+        document.getElementById('options-list').appendChild(optionDiv);
+        
+        const setCorrectBtn = optionDiv.querySelector('.set-correct-btn');
+        setCorrectBtn.addEventListener('click', function() {
+            document.querySelectorAll('.set-correct-btn').forEach(btn => {
+                btn.classList.remove('btn-correct-selected');
+                btn.classList.add('btn-secondary');
+                btn.textContent = 'Set Correct';
+            });
+            document.querySelectorAll('.correct-value').forEach(input => input.value = '0');
+            document.querySelectorAll('.option-card').forEach(card => card.classList.remove('correct-option'));
+            
+            this.classList.remove('btn-secondary');
+            this.classList.add('btn-correct-selected');
+            this.textContent = '✓ Correct';
+            optionDiv.querySelector('.correct-value').value = '1';
+            optionDiv.classList.add('correct-option');
         });
+        
+        optionDiv.querySelector('.remove-option').addEventListener('click', function() {
+            if (document.querySelectorAll('.option-card').length <= 2) {
+                alert('You need at least 2 options');
+                return;
+            }
+            optionDiv.remove();
+        });
+        
+        if (isCorrect) {
+            setCorrectBtn.click();
+        }
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    document.getElementById('add-option').addEventListener('click', function() {
+        addOption('', false);
+    });
+    
+    document.querySelectorAll('.remove-option-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            if (document.querySelectorAll('.option-card').length <= 2) {
+                alert('You need at least 2 options');
+                return;
+            }
+            this.closest('.option-card').remove();
+        });
+    });
+    
+    document.querySelectorAll('.set-correct-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.set-correct-btn').forEach(b => {
+                b.classList.remove('btn-correct-selected');
+                b.classList.add('btn-secondary');
+                b.textContent = 'Set Correct';
+            });
+            document.querySelectorAll('.correct-value').forEach(input => input.value = '0');
+            document.querySelectorAll('.option-card').forEach(card => card.classList.remove('correct-option'));
+            
+            this.classList.remove('btn-secondary');
+            this.classList.add('btn-correct-selected');
+            this.textContent = '✓ Correct';
+            this.closest('.option-card').querySelector('.correct-value').value = '1';
+            this.closest('.option-card').classList.add('correct-option');
+        });
+    });
+    
+    document.getElementById('questionForm').addEventListener('submit', function(e) {
+        let correctCount = 0;
+        document.querySelectorAll('.correct-value').forEach(input => {
+            if (input.value === '1') correctCount++;
+        });
+        
+        if (correctCount === 0) {
+            e.preventDefault();
+            alert('Please select the correct answer by clicking "Set Correct" on one option');
+            return false;
+        }
+        
+        let allFilled = true;
+        document.querySelectorAll('.option-card input[type="text"]').forEach(input => {
+            if (!input.value.trim()) allFilled = false;
+        });
+        
+        if (!allFilled) {
+            e.preventDefault();
+            alert('Please fill in all option texts');
+            return false;
+        }
     });
 </script>
 @endpush

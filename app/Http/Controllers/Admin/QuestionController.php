@@ -43,9 +43,6 @@ class QuestionController extends Controller
 
     public function store(Request $request, Quiz $quiz)
     {
-        // Debug
-        \Log::info('Store question request', $request->all());
-        
         // Check if user owns this quiz or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to add questions to this quiz.');
@@ -57,8 +54,9 @@ class QuestionController extends Controller
             'points' => 'required|integer|min:1|max:100',
             'time_seconds' => 'required|integer|min:10|max:300',
             'explanation' => 'nullable|string',
+            'show_answer' => 'nullable|boolean',
             'options' => 'required_if:question_type,multiple_choice,single_choice|array|min:2',
-            'options.*.text' => 'required|string',
+            'options.*.text' => 'required|string|min:1',
             'options.*.is_correct' => 'nullable|boolean',
             'true_false_correct' => 'required_if:question_type,true_false|in:true,false'
         ]);
@@ -75,7 +73,9 @@ class QuestionController extends Controller
                 'time_seconds' => $request->time_seconds,
                 'order' => $order,
                 'explanation' => $request->explanation,
-                'created_by' => Auth::id()
+                'show_answer' => $request->boolean('show_answer', true),
+                'created_by' => Auth::id(),
+                'is_active' => true
             ]);
 
             if ($request->question_type === 'true_false') {
@@ -93,10 +93,12 @@ class QuestionController extends Controller
                 ]);
             } else {
                 foreach ($request->options as $index => $optionData) {
+                    $isCorrect = isset($optionData['is_correct']) && ($optionData['is_correct'] == 1 || $optionData['is_correct'] === 'on');
+                    
                     Option::create([
                         'question_id' => $question->id,
                         'option_text' => $optionData['text'],
-                        'is_correct' => isset($optionData['is_correct']) && $optionData['is_correct'] == 1,
+                        'is_correct' => $isCorrect,
                         'order' => $index + 1
                     ]);
                 }
@@ -111,7 +113,6 @@ class QuestionController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            \Log::error('Failed to create question: ' . $e->getMessage());
             return back()->with('error', 'Failed to create question: ' . $e->getMessage())->withInput();
         }
     }
@@ -141,8 +142,72 @@ class QuestionController extends Controller
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to update questions for this quiz.');
         }
-        
-        // ... rest of the update method remains the same ...
+
+        $request->validate([
+            'question_text' => 'required|string|min:5',
+            'points' => 'required|integer|min:1|max:100',
+            'time_seconds' => 'required|integer|min:10|max:300',
+            'explanation' => 'nullable|string',
+            'show_answer' => 'nullable|boolean',
+            'options' => 'required|array|min:2',
+            'options.*.id' => 'nullable|exists:options,id',
+            'options.*.text' => 'required|string|min:1',
+            'options.*.is_correct' => 'nullable|boolean'
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $question->update([
+                'question_text' => $request->question_text,
+                'points' => $request->points,
+                'time_seconds' => $request->time_seconds,
+                'explanation' => $request->explanation,
+                'show_answer' => $request->boolean('show_answer', true),
+            ]);
+
+            $existingOptionIds = $question->options()->pluck('id')->toArray();
+            $submittedOptionIds = [];
+
+            foreach ($request->options as $index => $optionData) {
+                $isCorrect = isset($optionData['is_correct']) && ($optionData['is_correct'] == 1 || $optionData['is_correct'] === 'on');
+                
+                if (isset($optionData['id'])) {
+                    $option = Option::find($optionData['id']);
+                    if ($option) {
+                        $option->update([
+                            'option_text' => $optionData['text'],
+                            'is_correct' => $isCorrect,
+                            'order' => $index + 1
+                        ]);
+                        $submittedOptionIds[] = $option->id;
+                    }
+                } else {
+                    $option = Option::create([
+                        'question_id' => $question->id,
+                        'option_text' => $optionData['text'],
+                        'is_correct' => $isCorrect,
+                        'order' => $index + 1
+                    ]);
+                    $submittedOptionIds[] = $option->id;
+                }
+            }
+
+            $optionsToDelete = array_diff($existingOptionIds, $submittedOptionIds);
+            if (!empty($optionsToDelete)) {
+                Option::whereIn('id', $optionsToDelete)->delete();
+            }
+
+            $quiz->updateTotals();
+
+            DB::commit();
+
+            return redirect()->route('admin.quizzes.questions.index', $quiz)
+                ->with('success', 'Question updated successfully!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->with('error', 'Failed to update question: ' . $e->getMessage())->withInput();
+        }
     }
 
     public function destroy(Quiz $quiz, Question $question)

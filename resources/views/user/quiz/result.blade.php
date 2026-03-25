@@ -3,136 +3,347 @@
 @section('title', 'Quiz Result - ' . $attempt->quiz->title)
 
 @section('content')
-<div class="row">
-    <div class="col-md-8 mx-auto">
-        <div class="card shadow">
-            <div class="card-header text-center {{ $result->passed ? 'bg-success' : 'bg-warning' }} text-white">
-                <h3 class="mb-0">
-                    @if($result->passed)
-                        <i class="fas fa-trophy"></i> Congratulations! You Passed!
-                    @else
-                        <i class="fas fa-frown"></i> Better Luck Next Time!
-                    @endif
-                </h3>
+<style>
+    .result-card {
+        border-radius: 15px;
+        overflow: hidden;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+    }
+    .score-circle {
+        width: 180px;
+        height: 180px;
+        border-radius: 50%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    .score-number {
+        font-size: 48px;
+        font-weight: bold;
+    }
+    .rank-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 15px;
+        padding: 20px;
+        text-align: center;
+        color: white;
+    }
+    .rank-number {
+        font-size: 48px;
+        font-weight: bold;
+    }
+    .leaderboard-item {
+        transition: all 0.3s;
+    }
+    .leaderboard-item:hover {
+        background-color: #f8f9fa;
+        transform: translateX(5px);
+    }
+    .current-user-rank {
+        background-color: #e8f5e9;
+        border-left: 4px solid #4caf50;
+        font-weight: bold;
+    }
+    .medal-gold { color: #ffd700; }
+    .medal-silver { color: #c0c0c0; }
+    .medal-bronze { color: #cd7f32; }
+    .stat-box {
+        text-align: center;
+        padding: 15px;
+        border-radius: 10px;
+        background: #f8f9fa;
+    }
+</style>
+
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <!-- Header Card -->
+            <div class="card result-card mb-4">
+                <div class="card-header text-center {{ $result->passed ? 'bg-success' : 'bg-warning' }} text-white">
+                    <h3 class="mb-0">
+                        @if($result->passed)
+                            <i class="fas fa-trophy"></i> Congratulations! You Passed!
+                        @else
+                            <i class="fas fa-frown"></i> Better Luck Next Time!
+                        @endif
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <!-- Score Circle -->
+                        <div class="col-md-4 text-center mb-4">
+                            <div class="score-circle">
+                                <div class="score-number">{{ $percentage }}%</div>
+                                <div class="score-label">Your Score</div>
+                            </div>
+                            <div class="mt-3">
+                                <h4>{{ $attempt->score }} / {{ $attempt->quiz->total_points }} points</h4>
+                            </div>
+                        </div>
+
+                        <!-- Rank Card -->
+                        <div class="col-md-4 text-center mb-4">
+                            @if(isset($userRank) && $userRank)
+                                <div class="rank-card">
+                                    <div class="rank-number">
+                                        @if($userRank == 1)
+                                            🥇 #1
+                                        @elseif($userRank == 2)
+                                            🥈 #2
+                                        @elseif($userRank == 3)
+                                            🥉 #3
+                                        @else
+                                            #{{ $userRank }}
+                                        @endif
+                                    </div>
+                                    <div class="rank-label">Your Rank</div>
+                                    <div class="mt-2">
+                                        <small>Out of {{ $totalParticipants }} participants</small>
+                                    </div>
+                                    <div class="mt-1">
+                                        <small>Top {{ $totalParticipants > 0 ? round(($userRank / $totalParticipants) * 100, 1) : 0 }}%</small>
+                                    </div>
+                                </div>
+                            @else
+                                <div class="rank-card" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%);">
+                                    <div class="rank-number">N/A</div>
+                                    <div class="rank-label">Rank</div>
+                                    <div class="mt-2">
+                                        <small>Complete more quizzes to get ranked!</small>
+                                    </div>
+                                </div>
+                            @endif
+                        </div>
+
+                        <!-- Performance Summary -->
+                        <div class="col-md-4">
+                            <div class="stat-box mb-2">
+                                <div class="stat-number text-success">{{ $attempt->correct_answers }}</div>
+                                <div>Correct Answers</div>
+                            </div>
+                            <div class="stat-box mb-2">
+                                <div class="stat-number text-danger">{{ $attempt->incorrect_answers }}</div>
+                                <div>Incorrect Answers</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-number text-info">{{ $performanceMetrics['accuracy'] }}%</div>
+                                <div>Accuracy</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <!-- Performance Details -->
+                    <div class="row mt-3">
+                        <div class="col-md-6">
+                            <h5><i class="fas fa-info-circle text-primary"></i> Quiz Details</h5>
+                            <table class="table table-sm table-borderless">
+                                <tr><td width="40%"><strong>Quiz Title:</strong></td><td>{{ $attempt->quiz->title }}</td></tr>
+                                <tr><td><strong>Category:</strong></td><td>{{ $attempt->quiz->category->name }}</td></tr>
+                                <tr><td><strong>Started:</strong></td><td>{{ $attempt->started_at->format('M d, Y h:i A') }}</td></tr>
+                                <tr><td><strong>Completed:</strong></td><td>{{ $attempt->ended_at->format('M d, Y h:i A') }}</td></tr>
+                                <tr><td><strong>Time Taken:</strong></td><td>{{ gmdate("i:s", $performanceMetrics['time_taken']) }}</td></tr>
+                                <tr><td><strong>Avg Time/Question:</strong></td><td>{{ $performanceMetrics['time_per_question'] }} seconds</td></tr>
+                            </table>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <h5><i class="fas fa-chart-line text-primary"></i> Performance Summary</h5>
+                            <table class="table table-sm table-borderless">
+                                <tr><td width="40%"><strong>Total Questions:</strong></td><td>{{ $attempt->total_questions }}</td></tr>
+                                <tr><td><strong>Correct Answers:</strong></td><td class="text-success">{{ $attempt->correct_answers }}</td></tr>
+                                <tr><td><strong>Incorrect Answers:</strong></td><td class="text-danger">{{ $attempt->incorrect_answers }}</td></tr>
+                                <tr><td><strong>Accuracy:</strong></td>
+                                    <td>
+                                        <div class="progress" style="height: 20px;">
+                                            <div class="progress-bar {{ $performanceMetrics['accuracy'] >= 60 ? 'bg-success' : 'bg-warning' }}" 
+                                                 style="width: {{ $performanceMetrics['accuracy'] }}%">
+                                                {{ $performanceMetrics['accuracy'] }}%
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr><td><strong>Passing Score:</strong></td><td>{{ $attempt->quiz->passing_score }}%</td></tr>
+                                <tr><td><strong>Your Score:</strong></td><td><strong class="text-primary">{{ $percentage }}%</strong></td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="card-body text-center">
-                <!-- Score Circle -->
-                <div class="position-relative d-inline-block mb-4">
-                    <div class="rounded-circle d-flex align-items-center justify-content-center mx-auto" 
-                         style="width: 150px; height: 150px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-                        <div>
-                            <h1 class="display-1 text-white mb-0">{{ $result->percentage }}%</h1>
-                            <p class="text-white mb-0">Score</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <p class="lead">Your Score: <strong>{{ $attempt->score }}</strong> / {{ $attempt->quiz->total_points }}</p>
 
-                <div class="row mt-4">
-                    <div class="col-md-4">
-                        <div class="p-3 border rounded bg-light">
-                            <h3 class="text-success">{{ $attempt->correct_answers }}</h3>
-                            <p class="text-muted mb-0">Correct Answers</p>
-                        </div>
+            <!-- Leaderboard Top 10 -->
+            @if($topLeaderboard->count() > 0)
+                <div class="card mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="fas fa-trophy"></i> Top 10 Leaderboard</h5>
                     </div>
-                    <div class="col-md-4">
-                        <div class="p-3 border rounded bg-light">
-                            <h3 class="text-danger">{{ $attempt->incorrect_answers }}</h3>
-                            <p class="text-muted mb-0">Incorrect Answers</p>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="p-3 border rounded bg-light">
-                            <h3 class="text-info">{{ $result->rank ?? 'N/A' }}</h3>
-                            <p class="text-muted mb-0">Your Rank</p>
-                        </div>
-                    </div>
-                </div>
-
-                <hr class="my-4">
-
-                <div class="row text-start">
-                    <div class="col-md-6">
-                        <h5><i class="fas fa-info-circle"></i> Quiz Details</h5>
-                        <table class="table table-sm">
-                            <tr>
-                                <td>Quiz Title:</td>
-                                <td><strong>{{ $attempt->quiz->title }}</strong></td>
-                            </tr>
-                            <tr>
-                                <td>Category:</td>
-                                <td>{{ $attempt->quiz->category->name }}</td>
-                            </tr>
-                            <tr>
-                                <td>Started:</td>
-                                <td>{{ $attempt->started_at->format('M d, Y h:i A') }}</td>
-                            </tr>
-                            <tr>
-                                <td>Completed:</td>
-                                <td>{{ $attempt->ended_at->format('M d, Y h:i A') }}</td>
-                            </tr>
-                            <tr>
-                                <td>Time Taken:</td>
-                                <td>{{ $attempt->ended_at->diffInMinutes($attempt->started_at) }} minutes</td>
-                            </tr>
-                        </table>
-                    </div>
-                    
-                    <div class="col-md-6">
-                        <h5><i class="fas fa-chart-line"></i> Performance</h5>
-                        <table class="table table-sm">
-                            <tr>
-                                <td>Total Questions:</td>
-                                <td><strong>{{ $attempt->total_questions }}</strong></td>
-                            </tr>
-                            <tr>
-                                <td>Correct Answers:</td>
-                                <td><span class="text-success">{{ $attempt->correct_answers }}</span></td>
-                            </tr>
-                            <tr>
-                                <td>Incorrect Answers:</td>
-                                <td><span class="text-danger">{{ $attempt->incorrect_answers }}</span></td>
-                            </tr>
-                            <tr>
-                                <td>Accuracy:</td>
-                                <td>
-                                    <div class="progress" style="height: 20px;">
-                                        <div class="progress-bar {{ $result->passed ? 'bg-success' : 'bg-warning' }}" 
-                                             style="width: {{ $attempt->total_questions > 0 ? round(($attempt->correct_answers / $attempt->total_questions) * 100, 1) : 0 }}%">
-                                            {{ $attempt->total_questions > 0 ? round(($attempt->correct_answers / $attempt->total_questions) * 100, 1) : 0 }}%
+                    <div class="card-body p-0">
+                        <div class="list-group list-group-flush">
+                            @foreach($topLeaderboard as $entry)
+                                <div class="list-group-item leaderboard-item {{ $entry->user_id == Auth::id() ? 'current-user-rank' : '' }}">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            @if($entry->rank == 1)
+                                                <span class="medal-gold fs-4">🥇</span>
+                                            @elseif($entry->rank == 2)
+                                                <span class="medal-silver fs-4">🥈</span>
+                                            @elseif($entry->rank == 3)
+                                                <span class="medal-bronze fs-4">🥉</span>
+                                            @else
+                                                <span class="badge bg-secondary">#{{ $entry->rank }}</span>
+                                            @endif
+                                            <strong class="ms-2">{{ $entry->user->name }}</strong>
+                                            @if($entry->user_id == Auth::id())
+                                                <span class="badge bg-success ms-2">You</span>
+                                            @endif
+                                        </div>
+                                        <div>
+                                            <span class="badge bg-primary">{{ $entry->score }} pts</span>
                                         </div>
                                     </div>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td>Points Earned:</td>
-                                <td><strong class="text-primary">{{ $attempt->score }}</strong></td>
-                            </tr>
-                        </table>
+                                </div>
+                            @endforeach
+                        </div>
+                        @if($totalParticipants > 10)
+                            <div class="card-footer text-center">
+                                <small class="text-muted">And {{ $totalParticipants - 10 }} more participants...</small>
+                            </div>
+                        @endif
                     </div>
                 </div>
+            @endif
 
-                @if($result->passed)
-                    <div class="mt-4">
+            <!-- Question-wise Analysis -->
+            @if($result->question_wise_analysis)
+                <div class="card mb-4">
+                    <div class="card-header bg-secondary text-white">
+                        <h5 class="mb-0"><i class="fas fa-list"></i> Question-wise Analysis</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="accordion" id="questionAccordion">
+                            @foreach($result->question_wise_analysis as $index => $analysis)
+                                @php
+                                    $isCorrect = $analysis['is_correct'] ?? false;
+                                    $showAnswer = $analysis['show_answer'] ?? true;
+                                @endphp
+                                <div class="accordion-item">
+                                    <h2 class="accordion-header">
+                                        <button class="accordion-button {{ $index > 0 ? 'collapsed' : '' }}" type="button" 
+                                                data-bs-toggle="collapse" data-bs-target="#collapse{{ $index }}">
+                                            <div class="d-flex justify-content-between w-100 me-3">
+                                                <span>
+                                                    @if($isCorrect)
+                                                        <i class="fas fa-check-circle text-success"></i>
+                                                    @else
+                                                        <i class="fas fa-times-circle text-danger"></i>
+                                                    @endif
+                                                    <strong>Question {{ $index + 1 }}:</strong> {{ Str::limit($analysis['question_text'], 80) }}
+                                                </span>
+                                                <span class="badge {{ $isCorrect ? 'bg-success' : 'bg-danger' }}">
+                                                    {{ $analysis['points_earned'] }}/{{ $analysis['total_points'] ?? 0 }} pts
+                                                </span>
+                                            </div>
+                                        </button>
+                                    </h2>
+                                    <div id="collapse{{ $index }}" class="accordion-collapse collapse {{ $index == 0 ? 'show' : '' }}" 
+                                         data-bs-parent="#questionAccordion">
+                                        <div class="accordion-body">
+                                            <p><strong>Question:</strong> {{ $analysis['question_text'] }}</p>
+                                            <p><strong>Your Answer:</strong> 
+                                                @if(isset($analysis['selected_option_text']))
+                                                    {{ $analysis['selected_option_text'] }}
+                                                @else
+                                                    <span class="text-warning">Not answered</span>
+                                                @endif
+                                            </p>
+                                            @if($showAnswer && !$isCorrect && isset($analysis['correct_answer_text']))
+                                                <p class="text-success"><strong>Correct Answer:</strong> {{ $analysis['correct_answer_text'] }}</p>
+                                            @endif
+                                            @if(isset($analysis['time_taken']) && $analysis['time_taken'])
+                                                <p><strong>Time Taken:</strong> {{ $analysis['time_taken'] }} seconds</p>
+                                            @endif
+                                            @if(isset($analysis['explanation']) && $analysis['explanation'])
+                                                <div class="alert alert-info mt-2">
+                                                    <i class="fas fa-info-circle"></i> 
+                                                    <strong>Explanation:</strong> {{ $analysis['explanation'] }}
+                                                </div>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                </div>
+            @endif
+
+            <!-- Action Buttons -->
+            <div class="text-center mb-5">
+                <div class="d-flex justify-content-center gap-3 flex-wrap">
+                    @if($result->passed)
                         <a href="{{ route('user.certificate', $attempt) }}" class="btn btn-success btn-lg">
                             <i class="fas fa-certificate"></i> Download Certificate
                         </a>
-                    </div>
-                @endif
-
-                <hr>
-
-                <div class="mt-3">
-                    <a href="{{ route('user.dashboard') }}" class="btn btn-primary">
+                    @endif
+                    
+                    @if(isset($remainingAttempts) && $remainingAttempts > 0)
+                        <a href="{{ route('user.quiz.start', $attempt->quiz) }}" class="btn btn-warning btn-lg">
+                            <i class="fas fa-redo"></i> Retake Quiz ({{ $remainingAttempts }} attempts left)
+                        </a>
+                    @endif
+                    
+                    <button class="btn btn-info btn-lg" onclick="shareResult()">
+                        <i class="fas fa-share-alt"></i> Share Result
+                    </button>
+                    
+                    <a href="{{ route('user.dashboard') }}" class="btn btn-primary btn-lg">
                         <i class="fas fa-home"></i> Go to Dashboard
-                    </a>
-                    <a href="{{ route('user.quiz.lobby', $attempt->quiz) }}" class="btn btn-outline-primary">
-                        <i class="fas fa-redo"></i> Retake Quiz
                     </a>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+@push('scripts')
+<script>
+    function shareResult() {
+        const url = window.location.href;
+        const text = `I scored {{ $percentage }}% on "{{ $attempt->quiz->title }}" and ranked #{{ $userRank ?? 'N/A' }}! Can you beat my score?`;
+        
+        if (navigator.share) {
+            navigator.share({
+                title: 'Quiz Result',
+                text: text,
+                url: url
+            }).catch(console.error);
+        } else {
+            navigator.clipboard.writeText(text + ' ' + url).then(() => {
+                alert('Result copied to clipboard! Share it with your friends.');
+            });
+        }
+    }
+    
+    // Animate score
+    const scoreNumber = document.querySelector('.score-number');
+    if (scoreNumber) {
+        const target = parseInt(scoreNumber.innerText);
+        let current = 0;
+        const interval = setInterval(() => {
+            if (current <= target) {
+                scoreNumber.innerText = current + '%';
+                current++;
+            } else {
+                clearInterval(interval);
+            }
+        }, 20);
+    }
+</script>
+@endpush
 @endsection

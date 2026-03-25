@@ -6,11 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Quiz;
 use App\Models\QuizParticipant;
 use App\Models\QuizAttempt;
-use App\Models\Leaderboard;
 use App\Events\ParticipantJoined;
 use App\Events\ParticipantLeft;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class QuizLobbyController extends Controller
 {
@@ -48,42 +48,6 @@ class QuizLobbyController extends Controller
             ]
         );
 
-        // Get user's best rank for this quiz
-        $userRank = null;
-        $bestScore = null;
-        $totalParticipants = null;
-        
-        $leaderboardEntry = Leaderboard::where('quiz_id', $quiz->id)
-            ->where('user_id', $user->id)
-            ->orderBy('rank')
-            ->first();
-        
-        if ($leaderboardEntry) {
-            $userRank = $leaderboardEntry->rank;
-            $bestScore = $leaderboardEntry->score;
-            $totalParticipants = Leaderboard::where('quiz_id', $quiz->id)->count();
-        } else {
-            // Check if user has any completed attempts
-            $bestAttempt = QuizAttempt::where('user_id', $user->id)
-                ->where('quiz_id', $quiz->id)
-                ->where('status', 'completed')
-                ->orderByDesc('score')
-                ->first();
-            
-            if ($bestAttempt) {
-                $bestScore = $bestAttempt->score;
-                // Calculate rank
-                $higherScores = QuizAttempt::where('quiz_id', $quiz->id)
-                    ->where('status', 'completed')
-                    ->where('score', '>', $bestAttempt->score)
-                    ->count();
-                $userRank = $higherScores + 1;
-                $totalParticipants = QuizAttempt::where('quiz_id', $quiz->id)
-                    ->where('status', 'completed')
-                    ->count();
-            }
-        }
-
         // Only get participants with status 'joined' (active in lobby)
         $participants = QuizParticipant::with('user')
             ->where('quiz_id', $quiz->id)
@@ -97,10 +61,7 @@ class QuizLobbyController extends Controller
             'hasAttemptsLeft',
             'remainingAttempts',
             'completedAttempts',
-            'inProgressAttempt',
-            'userRank',
-            'bestScore',
-            'totalParticipants'
+            'inProgressAttempt'
         ));
     }
 
@@ -122,10 +83,12 @@ class QuizLobbyController extends Controller
         } else {
             $participant->update([
                 'status' => 'joined',
-                'joined_at' => now()
+                'joined_at' => now(),
+                'updated_at' => now()
             ]);
         }
 
+        // Broadcast to all other participants
         broadcast(new ParticipantJoined($user, $quiz))->toOthers();
         
         return response()->json(['success' => true, 'status' => 'joined']);
@@ -155,7 +118,7 @@ class QuizLobbyController extends Controller
 
     public function participants(Quiz $quiz)
     {
-        // Only return participants with status 'joined'
+        // Only return participants with status 'joined' - NO cleanup here
         $participants = QuizParticipant::with('user')
             ->where('quiz_id', $quiz->id)
             ->where('status', 'joined')
@@ -180,6 +143,7 @@ class QuizLobbyController extends Controller
             ->first();
         
         if ($participant && $participant->status === 'joined') {
+            // Update timestamp to show activity
             $participant->update(['updated_at' => now()]);
             return response()->json(['success' => true]);
         }

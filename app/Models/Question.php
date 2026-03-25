@@ -10,16 +10,8 @@ class Question extends Model
     use HasFactory;
 
     protected $fillable = [
-        'quiz_id', 
-        'question_text', 
-        'question_type', 
-        'points', 
-        'time_seconds',
-        'order', 
-        'explanation', 
-        'metadata', 
-        'is_active', 
-        'created_by'
+        'quiz_id', 'question_text', 'question_type', 'points', 'time_seconds',
+        'order', 'explanation', 'show_answer', 'metadata', 'is_active', 'created_by'
     ];
 
     protected $casts = [
@@ -27,6 +19,7 @@ class Question extends Model
         'time_seconds' => 'integer',
         'order' => 'integer',
         'is_active' => 'boolean',
+        'show_answer' => 'boolean',
         'metadata' => 'array',
     ];
 

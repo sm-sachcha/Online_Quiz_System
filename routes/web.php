@@ -16,6 +16,7 @@ use App\Http\Controllers\Admin\QuizController as AdminQuizController;
 use App\Http\Controllers\Admin\QuestionController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\ResultController as AdminResultController;
 use App\Http\Controllers\MasterAdmin\AdminManagementController;
 use App\Http\Controllers\MasterAdmin\SystemSettingsController;
 
@@ -69,6 +70,9 @@ Route::middleware(['auth', 'role:user'])->prefix('user')->name('user.')->group(f
         // Result routes
         Route::get('result/{quiz}/{attempt}', [ResultController::class, 'show'])->name('result');
         Route::get('attempts/{quiz}', [QuizAttemptController::class, 'attempts'])->name('attempts');
+
+        // Quiz details for AJAX
+        Route::get('results/quiz/{quiz}/details', [App\Http\Controllers\Admin\ResultController::class, 'getQuizDetails'])->name('results.quiz.details');
     });
 });
 
@@ -109,6 +113,13 @@ Route::middleware(['auth', 'role:admin,master_admin'])->prefix('admin')->name('a
         Route::get('system-overview', [ReportController::class, 'systemOverview'])->name('system-overview');
         Route::get('export', [ReportController::class, 'exportQuizReport'])->name('export');
         Route::get('export-activity', [ReportController::class, 'exportUserActivity'])->name('export-activity');
+    });
+    
+    // Results - ADD THIS INSIDE ADMIN GROUP
+    Route::prefix('results')->name('results.')->group(function () {
+        Route::get('/', [AdminResultController::class, 'index'])->name('index');
+        Route::get('{attempt}', [AdminResultController::class, 'show'])->name('show');
+        Route::get('export/csv', [AdminResultController::class, 'export'])->name('export');
     });
 });
 

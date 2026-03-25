@@ -122,6 +122,12 @@
                         <i class="fas fa-question-circle"></i> Quizzes
                     </a>
                 </li>
+
+                <li class="{{ request()->routeIs('admin.results.*') ? 'active' : '' }}">
+                    <a href="{{ route('admin.results.index') }}">
+                        <i class="fas fa-chart-line"></i> Results
+                    </a>
+                </li>
                 
                 <li class="{{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
                     <a href="{{ route('admin.users.index') }}">
