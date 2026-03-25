@@ -12,54 +12,89 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom CSS -->
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        
         body {
-            min-height: 100vh;
             display: flex;
             flex-direction: column;
+            min-height: 100vh;
         }
-        main {
+        
+        #app {
+            display: flex;
+            flex-direction: column;
             flex: 1;
         }
+        
+        main {
+            flex: 1 0 auto;
+        }
+        
+        footer {
+            flex-shrink: 0;
+            margin-top: auto;
+        }
+        
         .navbar-brand {
             font-weight: bold;
         }
+        
         .quiz-card {
             transition: transform 0.3s;
         }
+        
         .quiz-card:hover {
             transform: translateY(-5px);
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
+        
         .timer {
             font-size: 1.5rem;
             font-weight: bold;
             font-family: monospace;
         }
+        
         .option-btn {
             transition: all 0.3s;
             white-space: normal;
             text-align: left;
             padding: 15px;
         }
+        
         .option-btn:hover:not(:disabled) {
             transform: translateX(5px);
         }
+        
         .leaderboard-item {
             transition: all 0.3s;
         }
+        
         .leaderboard-item:hover {
             background-color: #f8f9fa;
             transform: translateX(5px);
         }
+        
         @keyframes pulse {
             0% { opacity: 1; }
             50% { opacity: 0.7; }
             100% { opacity: 1; }
         }
+        
         .timer-danger {
             animation: pulse 1s infinite;
             background-color: #dc3545 !important;
         }
+        
         .spinner-overlay {
             position: fixed;
             top: 0;
@@ -71,6 +106,10 @@
             justify-content: center;
             align-items: center;
             z-index: 9999;
+        }
+        
+        .content-wrapper {
+            flex: 1;
         }
     </style>
     @stack('styles')
@@ -154,8 +193,8 @@
         </nav>
 
         <!-- Main Content -->
-        <main class="py-4">
-            <div class="container">
+        <main>
+            <div class="container py-4">
                 @if(session('success'))
                     <div class="alert alert-success alert-dismissible fade show" role="alert">
                         <i class="fas fa-check-circle"></i> {{ session('success') }}
@@ -181,10 +220,10 @@
             </div>
         </main>
 
-        <!-- Footer -->
-        <footer class="bg-light text-center text-lg-start mt-5">
+        <!-- Footer - Always at Bottom -->
+        <footer class="bg-light text-center text-lg-start border-top">
             <div class="text-center p-3">
-                <i class="fas fa-copyright"></i> {{ date('Y') }} {{ config('app.name') }}. All rights reserved.
+                <i class="fas fa-copyright"></i> {{ date('Y') }} Online Quiz System. Design by Sachcha.
             </div>
         </footer>
     </div>

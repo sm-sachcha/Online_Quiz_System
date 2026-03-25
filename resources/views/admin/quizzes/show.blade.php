@@ -9,10 +9,13 @@
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="fas fa-info-circle"></i> Quiz Details</h5>
                 <div>
+                    <a href="{{ route('admin.quizzes.participants', $quiz) }}" class="btn btn-info btn-sm">
+                        <i class="fas fa-users"></i> View Participants
+                    </a>
                     <a href="{{ route('admin.quizzes.edit', $quiz) }}" class="btn btn-primary btn-sm">
                         <i class="fas fa-edit"></i> Edit Quiz
                     </a>
-                    <a href="{{ route('admin.quizzes.questions.index', $quiz) }}" class="btn btn-info btn-sm">
+                    <a href="{{ route('admin.quizzes.questions.index', $quiz) }}" class="btn btn-secondary btn-sm">
                         <i class="fas fa-question-circle"></i> Manage Questions
                     </a>
                 </div>

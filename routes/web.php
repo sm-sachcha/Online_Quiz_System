@@ -19,18 +19,13 @@ use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\MasterAdmin\AdminManagementController;
 use App\Http\Controllers\MasterAdmin\SystemSettingsController;
 
-/*
-|--------------------------------------------------------------------------
-| Web Routes
-|--------------------------------------------------------------------------
-*/
 
-// Public routes
+// ==================== PUBLIC ROUTES ====================
 Route::get('/', function () {
     return view('welcome');
 })->name('home');
 
-// Authentication routes
+// ==================== AUTHENTICATION ROUTES ====================
 Route::middleware('guest')->group(function () {
     Route::get('login', [LoginController::class, 'showLoginForm'])->name('login');
     Route::post('login', [LoginController::class, 'login']);
@@ -42,7 +37,7 @@ Route::middleware('guest')->group(function () {
     Route::post('reset-password', [ResetPasswordController::class, 'reset'])->name('password.update');
 });
 
-// Authenticated routes
+// ==================== AUTHENTICATED ROUTES ====================
 Route::middleware('auth')->group(function () {
     Route::post('logout', [LoginController::class, 'logout'])->name('logout');
     Route::get('profile', [ProfileController::class, 'show'])->name('profile.show');
@@ -57,18 +52,21 @@ Route::middleware(['auth', 'role:user'])->prefix('user')->name('user.')->group(f
     
     // Quiz routes
     Route::prefix('quiz')->name('quiz.')->group(function () {
+        // Lobby routes
         Route::get('lobby/{quiz}', [QuizLobbyController::class, 'index'])->name('lobby');
         Route::post('lobby/{quiz}/join', [QuizLobbyController::class, 'join'])->name('join');
         Route::post('lobby/{quiz}/leave', [QuizLobbyController::class, 'leave'])->name('leave');
         Route::get('lobby/{quiz}/participants', [QuizLobbyController::class, 'participants'])->name('participants');
         Route::post('lobby/{quiz}/heartbeat', [QuizLobbyController::class, 'heartbeat'])->name('heartbeat');
         
+        // Attempt routes
         Route::get('start/{quiz}', [QuizAttemptController::class, 'start'])->name('start');
         Route::get('attempt/{quiz}/{attempt}', [QuizAttemptController::class, 'attempt'])->name('attempt');
         Route::post('attempt/{quiz}/{attempt}/submit', [QuizAttemptController::class, 'submitAnswer'])->name('submit');
         Route::post('attempt/{quiz}/{attempt}/submit-multiple', [QuizAttemptController::class, 'submitMultipleAnswer'])->name('submit-multiple');
         Route::post('attempt/{quiz}/{attempt}/finish', [QuizAttemptController::class, 'finish'])->name('finish');
         
+        // Result routes
         Route::get('result/{quiz}/{attempt}', [ResultController::class, 'show'])->name('result');
         Route::get('attempts/{quiz}', [QuizAttemptController::class, 'attempts'])->name('attempts');
     });
@@ -76,6 +74,7 @@ Route::middleware(['auth', 'role:user'])->prefix('user')->name('user.')->group(f
 
 // ==================== ADMIN ROUTES ====================
 Route::middleware(['auth', 'role:admin,master_admin'])->prefix('admin')->name('admin.')->group(function () {
+    // Dashboard
     Route::get('dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
     
     // Categories
@@ -98,7 +97,7 @@ Route::middleware(['auth', 'role:admin,master_admin'])->prefix('admin')->name('a
         Route::post('reorder', [QuestionController::class, 'reorder'])->name('reorder');
     });
     
-    // Users
+    // Users Management
     Route::resource('users', AdminUserController::class);
     Route::post('users/{user}/toggle-status', [AdminUserController::class, 'toggleStatus'])->name('users.toggle-status');
     
@@ -115,6 +114,7 @@ Route::middleware(['auth', 'role:admin,master_admin'])->prefix('admin')->name('a
 
 // ==================== MASTER ADMIN ROUTES ====================
 Route::middleware(['auth', 'role:master_admin'])->prefix('master-admin')->name('master-admin.')->group(function () {
+    // Dashboard
     Route::get('dashboard', function () {
         return view('master-admin.dashboard');
     })->name('dashboard');
@@ -141,7 +141,7 @@ Route::middleware(['auth', 'role:master_admin'])->prefix('master-admin')->name('
     });
 });
 
-// Error routes
+// ==================== ERROR ROUTES ====================
 Route::get('unauthorized', function () {
     return view('errors.403');
 })->name('unauthorized');

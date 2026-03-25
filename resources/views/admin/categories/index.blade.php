@@ -13,11 +13,18 @@
                 </a>
             </div>
             <div class="card-body">
+                <!-- Filter Info for General Admin -->
+                @if(!Auth::user()->isMasterAdmin())
+                    <div class="alert alert-info mb-3">
+                        <i class="fas fa-info-circle"></i> You are viewing only categories you created.
+                    </div>
+                @endif
+
                 @if($categories->count() > 0)
                     <div class="table-responsive">
                         <table class="table table-hover" id="categoriesTable">
                             <thead>
-                                <tr>
+                                 <tr>
                                     <th>ID</th>
                                     <th>Icon</th>
                                     <th>Name</th>
@@ -27,10 +34,11 @@
                                     <th>Created By</th>
                                     <th>Created At</th>
                                     <th>Actions</th>
-                                 </thead>
+                                 </tr>
+                            </thead>
                             <tbody>
                                 @foreach($categories as $category)
-                                    <tr>
+                                     <tr>
                                         <td>{{ $category->id }}</td>
                                         <td>
                                             @if($category->icon)
@@ -82,7 +90,13 @@
                     <div class="text-center py-5">
                         <i class="fas fa-folder-open fa-4x text-muted mb-3"></i>
                         <h5>No Categories Found</h5>
-                        <p class="text-muted">Click the button above to create your first category.</p>
+                        <p class="text-muted">
+                            @if(!Auth::user()->isMasterAdmin())
+                                You haven't created any categories yet.
+                            @else
+                                No categories found in the system.
+                            @endif
+                        </p>
                         <a href="{{ route('admin.categories.create') }}" class="btn btn-primary">
                             <i class="fas fa-plus"></i> Create Category
                         </a>

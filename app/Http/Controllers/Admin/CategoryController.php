@@ -12,10 +12,22 @@ class CategoryController extends Controller
 {
     public function index()
     {
-        $categories = Category::with('creator')
-            ->withCount('quizzes')
-            ->latest()
-            ->paginate(15);
+        $user = Auth::user();
+        
+        // If Master Admin - see all categories
+        // If General Admin - see only categories they created
+        if ($user->isMasterAdmin()) {
+            $categories = Category::with('creator')
+                ->withCount('quizzes')
+                ->latest()
+                ->paginate(15);
+        } else {
+            $categories = Category::with('creator')
+                ->withCount('quizzes')
+                ->where('created_by', $user->id)
+                ->latest()
+                ->paginate(15);
+        }
         
         return view('admin.categories.index', compact('categories'));
     }
@@ -51,11 +63,21 @@ class CategoryController extends Controller
 
     public function edit(Category $category)
     {
+        // Check if user owns this category or is Master Admin
+        if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
+            abort(403, 'You do not have permission to edit this category.');
+        }
+        
         return view('admin.categories.edit', compact('category'));
     }
 
     public function update(Request $request, Category $category)
     {
+        // Check if user owns this category or is Master Admin
+        if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
+            abort(403, 'You do not have permission to update this category.');
+        }
+        
         $request->validate([
             'name' => 'required|string|max:255|unique:categories,name,' . $category->id,
             'description' => 'nullable|string',
@@ -79,6 +101,11 @@ class CategoryController extends Controller
 
     public function destroy(Category $category)
     {
+        // Check if user owns this category or is Master Admin
+        if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
+            abort(403, 'You do not have permission to delete this category.');
+        }
+        
         if ($category->quizzes()->exists()) {
             return back()->with('error', 'Cannot delete category with associated quizzes.');
         }

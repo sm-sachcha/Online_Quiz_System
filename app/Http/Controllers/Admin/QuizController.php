@@ -13,17 +13,40 @@ class QuizController extends Controller
 {
     public function index()
     {
-        $quizzes = Quiz::with('category', 'creator')
-            ->withCount('questions', 'attempts')
-            ->latest()
-            ->paginate(15);
+        $user = Auth::user();
+        
+        // If Master Admin - see all quizzes
+        // If General Admin - see only quizzes they created
+        if ($user->isMasterAdmin()) {
+            $quizzes = Quiz::with('category', 'creator')
+                ->withCount('questions', 'attempts')
+                ->latest()
+                ->paginate(15);
+        } else {
+            $quizzes = Quiz::with('category', 'creator')
+                ->withCount('questions', 'attempts')
+                ->where('created_by', $user->id)
+                ->latest()
+                ->paginate(15);
+        }
         
         return view('admin.quizzes.index', compact('quizzes'));
     }
 
     public function create()
     {
-        $categories = Category::where('is_active', true)->get();
+        $user = Auth::user();
+        
+        // If Master Admin - see all categories
+        // If General Admin - see only categories they created
+        if ($user->isMasterAdmin()) {
+            $categories = Category::where('is_active', true)->get();
+        } else {
+            $categories = Category::where('is_active', true)
+                ->where('created_by', $user->id)
+                ->get();
+        }
+        
         return view('admin.quizzes.create', compact('categories'));
     }
 
@@ -41,6 +64,12 @@ class QuizController extends Controller
             'ends_at' => 'nullable|date|after:scheduled_at',
             'is_published' => 'boolean'
         ]);
+
+        // Check if user has permission to use this category
+        $category = Category::find($request->category_id);
+        if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
+            return back()->with('error', 'You do not have permission to use this category.');
+        }
 
         $quiz = Quiz::create([
             'title' => $request->title,
@@ -65,6 +94,11 @@ class QuizController extends Controller
 
     public function show(Quiz $quiz)
     {
+        // Check if user owns this quiz or is Master Admin
+        if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
+            abort(403, 'You do not have permission to view this quiz.');
+        }
+        
         $quiz->load('category', 'creator', 'questions.options');
         
         $stats = [
@@ -82,12 +116,33 @@ class QuizController extends Controller
 
     public function edit(Quiz $quiz)
     {
-        $categories = Category::where('is_active', true)->get();
+        // Check if user owns this quiz or is Master Admin
+        if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
+            abort(403, 'You do not have permission to edit this quiz.');
+        }
+        
+        $user = Auth::user();
+        
+        // If Master Admin - see all categories
+        // If General Admin - see only categories they created
+        if ($user->isMasterAdmin()) {
+            $categories = Category::where('is_active', true)->get();
+        } else {
+            $categories = Category::where('is_active', true)
+                ->where('created_by', $user->id)
+                ->get();
+        }
+        
         return view('admin.quizzes.edit', compact('quiz', 'categories'));
     }
 
     public function update(Request $request, Quiz $quiz)
     {
+        // Check if user owns this quiz or is Master Admin
+        if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
+            abort(403, 'You do not have permission to update this quiz.');
+        }
+        
         $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
@@ -100,6 +155,12 @@ class QuizController extends Controller
             'ends_at' => 'nullable|date|after:scheduled_at',
             'is_published' => 'boolean'
         ]);
+
+        // Check if user has permission to use this category
+        $category = Category::find($request->category_id);
+        if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
+            return back()->with('error', 'You do not have permission to use this category.');
+        }
 
         $quiz->update([
             'title' => $request->title,
@@ -124,6 +185,11 @@ class QuizController extends Controller
 
     public function destroy(Quiz $quiz)
     {
+        // Check if user owns this quiz or is Master Admin
+        if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
+            abort(403, 'You do not have permission to delete this quiz.');
+        }
+        
         $quiz->delete();
 
         return redirect()->route('admin.quizzes.index')
@@ -132,6 +198,11 @@ class QuizController extends Controller
 
     public function duplicate(Quiz $quiz)
     {
+        // Check if user owns this quiz or is Master Admin
+        if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
+            abort(403, 'You do not have permission to duplicate this quiz.');
+        }
+        
         $newQuiz = $quiz->replicate();
         $newQuiz->title = $quiz->title . ' (Copy)';
         $newQuiz->slug = Str::slug($newQuiz->title);
@@ -159,20 +230,33 @@ class QuizController extends Controller
     
     public function togglePublish(Quiz $quiz)
     {
+        // Check if user owns this quiz or is Master Admin
+        if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
+            abort(403, 'You do not have permission to modify this quiz.');
+        }
+        
         $quiz->update(['is_published' => !$quiz->is_published]);
         
         $status = $quiz->is_published ? 'published' : 'hidden';
         return back()->with('success', "Quiz has been {$status}.");
     }
     
-    public function updateTotals(Quiz $quiz)
+    public function participants(Quiz $quiz)
     {
-        $quiz->updateTotals();
+        // Check if user owns this quiz or is Master Admin
+        if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
+            abort(403, 'You do not have permission to view participants for this quiz.');
+        }
         
-        return response()->json([
-            'success' => true,
-            'total_questions' => $quiz->total_questions,
-            'total_points' => $quiz->total_points
-        ]);
+        $participants = \App\Models\QuizParticipant::with('user')
+            ->where('quiz_id', $quiz->id)
+            ->orderBy('joined_at', 'desc')
+            ->get();
+        
+        $activeParticipants = $participants->where('status', 'joined')->count();
+        $totalParticipants = $participants->count();
+        $completedParticipants = $participants->where('status', 'completed')->count();
+        
+        return view('admin.quizzes.participants', compact('quiz', 'participants', 'activeParticipants', 'totalParticipants', 'completedParticipants'));
     }
 }
