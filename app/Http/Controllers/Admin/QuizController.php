@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Quiz;
 use App\Models\Category;
+use App\Models\QuizParticipant;
+use App\Models\QuizAttempt;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -253,22 +255,58 @@ class QuizController extends Controller
         return back()->with('success', "Quiz has been {$status}.");
     }
     
-    public function participants(Quiz $quiz)
-    {
-        // Check if user owns this quiz or is Master Admin
-        if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
-            abort(403, 'You do not have permission to view participants for this quiz.');
-        }
-        
-        $participants = \App\Models\QuizParticipant::with('user')
-            ->where('quiz_id', $quiz->id)
-            ->orderBy('joined_at', 'desc')
-            ->get();
-        
-        $activeParticipants = $participants->where('status', 'joined')->count();
-        $totalParticipants = $participants->count();
-        $completedParticipants = $participants->where('status', 'completed')->count();
-        
-        return view('admin.quizzes.participants', compact('quiz', 'participants', 'activeParticipants', 'totalParticipants', 'completedParticipants'));
+/**
+ * Show quiz participants for admin
+ */
+public function participants(Quiz $quiz)
+{
+    // Check permission
+    if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
+        abort(403, 'You do not have permission to view participants for this quiz.');
     }
+    
+    // Get ALL participants from the database (not just from the relationship)
+    // Using the QuizParticipant model directly to ensure we get all records
+    $participants = \App\Models\QuizParticipant::with('user')
+        ->where('quiz_id', $quiz->id)
+        ->orderByRaw("FIELD(status, 'taking_quiz', 'joined', 'completed', 'left')")
+        ->orderBy('updated_at', 'desc')
+        ->get();
+    
+    // Log for debugging
+    \Log::info('Admin participants view', [
+        'quiz_id' => $quiz->id,
+        'total_participants' => $participants->count(),
+        'statuses' => $participants->pluck('status')->toArray()
+    ]);
+    
+    // Get users currently taking the quiz (in_progress attempts)
+    $inProgressUsers = QuizAttempt::where('quiz_id', $quiz->id)
+        ->where('status', 'in_progress')
+        ->pluck('user_id')
+        ->toArray();
+    
+    // Get completed participants count
+    $completedParticipants = QuizAttempt::where('quiz_id', $quiz->id)
+        ->where('status', 'completed')
+        ->distinct('user_id')
+        ->count('user_id');
+    
+    // Calculate active participants (joined + taking_quiz)
+    $activeParticipants = $participants->whereIn('status', ['joined', 'taking_quiz'])->count();
+    
+    // Calculate lobby users
+    $lobbyUsers = $participants->where('status', 'joined')
+        ->whereNotIn('user_id', $inProgressUsers)
+        ->count();
+    
+    return view('admin.quizzes.participants', compact(
+        'quiz', 
+        'participants', 
+        'activeParticipants', 
+        'inProgressUsers',
+        'completedParticipants',
+        'lobbyUsers'
+    ));
+}
 }

@@ -486,7 +486,7 @@
         const list = document.getElementById('participantsList');
         if (!list) return;
         
-        if (participants.length === 0) {
+        if (!participants || participants.length === 0) {
             list.innerHTML = '<div class="text-center py-3 text-muted"><i class="fas fa-user-friends"></i> No active participants</div>';
             document.getElementById('participantCount').textContent = '0';
             return;
@@ -495,8 +495,10 @@
         list.innerHTML = '';
         participants.forEach(participant => {
             const isYou = participant.id === userId;
+            const isTakingQuiz = participant.status === 'taking_quiz' || participant.is_active === true;
+            
             const item = document.createElement('div');
-            item.className = 'list-group-item list-group-item-action participant-item';
+            item.className = 'list-group-item participant-item';
             if (isYou) {
                 item.classList.add('bg-light', 'border-primary');
             }
@@ -508,9 +510,10 @@
                     <div class="flex-grow-1">
                         <strong>${escapeHtml(participant.name)}</strong>
                         ${isYou ? '<br><small class="text-muted">You</small>' : ''}
+                        ${isTakingQuiz ? '<br><small class="text-warning"><i class="fas fa-play"></i> Taking quiz</small>' : ''}
                     </div>
                     <div>
-                        <span class="online-indicator"></span>
+                        <span class="online-indicator ${isTakingQuiz ? 'bg-warning' : 'bg-success'}"></span>
                     </div>
                 </div>
             `;

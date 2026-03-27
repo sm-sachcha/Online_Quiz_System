@@ -36,11 +36,12 @@ class Category extends Model
         return $this->hasMany(Quiz::class);
     }
     
-    // Users assigned to this category
+    /**
+     * Users assigned to this category
+     */
     public function assignedUsers()
     {
-        return $this->belongsToMany(User::class, 'category_users')
-            ->withPivot('status', 'created_at', 'updated_at')
+        return $this->belongsToMany(User::class, 'category_users', 'category_id', 'user_id')
             ->withTimestamps();
     }
 }

@@ -65,6 +65,7 @@ Route::middleware(['auth', 'role:user'])->prefix('user')->name('user.')->group(f
         
         Route::get('result/{quiz}/{attempt}', [ResultController::class, 'show'])->name('result');
         Route::get('attempts/{quiz}', [QuizAttemptController::class, 'attempts'])->name('attempts');
+        
     });
 });
 

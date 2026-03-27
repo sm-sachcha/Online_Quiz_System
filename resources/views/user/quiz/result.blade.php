@@ -93,16 +93,15 @@
         font-size: 16px;
         font-weight: bold;
     }
-    .question-time {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 12px;
-        background-color: #e9ecef;
-        font-family: monospace;
+    .attempt-history-table {
+        font-size: 14px;
     }
-    .time-exceeded {
-        background-color: #f8d7da;
-        color: #721c24;
+    .attempt-history-table .badge {
+        font-size: 11px;
+    }
+    .best-attempt-row {
+        background-color: #e8f5e9 !important;
+        border-left: 4px solid #4caf50;
     }
 </style>
 
@@ -119,6 +118,16 @@
                             <i class="fas fa-frown"></i> Better Luck Next Time!
                         @endif
                     </h3>
+                    @if(isset($attemptNumber) && $attemptNumber > 1)
+                        <small class="mt-2 d-block">
+                            <i class="fas fa-redo"></i> Attempt #{{ $attemptNumber }}
+                            @if(isset($isBestScore) && $isBestScore)
+                                <span class="badge bg-warning text-dark ms-2 improvement-badge">
+                                    <i class="fas fa-chart-line"></i> New Best Score!
+                                </span>
+                            @endif
+                        </small>
+                    @endif
                 </div>
                 <div class="card-body">
                     <div class="row">
@@ -185,6 +194,7 @@
                             <div class="stat-box">
                                 <div class="stat-number text-info">{{ $performanceMetrics['accuracy'] }}%</div>
                                 <div>Accuracy</div>
+                                <small class="text-muted">{{ $attempt->correct_answers }}/{{ $attempt->total_questions }} questions</small>
                             </div>
                         </div>
                     </div>
@@ -263,6 +273,7 @@
                                                 {{ $performanceMetrics['accuracy'] }}%
                                             </div>
                                         </div>
+                                        <small class="text-muted">{{ $attempt->correct_answers }}/{{ $attempt->total_questions }} correct</small>
                                     </td>
                                 </tr>
                                 <tr>
@@ -277,21 +288,28 @@
                         </div>
                     </div>
 
-                    <!-- Attempts Info Section (Simple) -->
+                    <!-- Attempts Info Section -->
                     <div class="attempts-info text-center">
                         <div class="row">
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <i class="fas fa-redo text-primary"></i>
                                 <strong>Attempt #{{ $attemptNumber ?? 1 }}</strong>
                                 @if(isset($totalAttempts) && $totalAttempts > 1)
                                     <br><small class="text-muted">({{ $totalAttempts }} total attempts)</small>
                                 @endif
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <i class="fas fa-chart-line text-success"></i>
                                 <strong>Best Score: {{ $bestScoreInfo['score'] ?? $attempt->score }} points</strong>
                                 @if(isset($bestScoreInfo) && $bestScoreInfo && $bestScoreInfo['score'] != $attempt->score)
                                     <br><small class="text-muted">({{ $bestScoreInfo['percentage'] }}%)</small>
+                                @endif
+                            </div>
+                            <div class="col-md-4">
+                                <i class="fas fa-bullseye text-info"></i>
+                                <strong>Best Accuracy: {{ $bestScoreInfo['accuracy'] ?? $performanceMetrics['accuracy'] }}%</strong>
+                                @if(isset($bestScoreInfo) && $bestScoreInfo['accuracy'] != $performanceMetrics['accuracy'])
+                                    <br><small class="text-muted">({{ $bestScoreInfo['correct_answers'] }}/{{ $bestScoreInfo['total_questions'] }} correct)</small>
                                 @endif
                             </div>
                         </div>
@@ -318,7 +336,7 @@
             @if($topLeaderboard->count() > 0)
                 <div class="card mb-4">
                     <div class="card-header bg-info text-white">
-                        <h5 class="mb-0"><i class="fas fa-trophy"></i> Top 3 Leaderboard</h5>
+                        <h5 class="mb-0"><i class="fas fa-trophy"></i> Top 10 Leaderboard</h5>
                     </div>
                     <div class="card-body p-0">
                         <div class="list-group list-group-flush">
@@ -338,6 +356,9 @@
                                             <strong class="ms-2">{{ $entry->user->name }}</strong>
                                             @if($entry->user_id == Auth::id())
                                                 <span class="badge bg-success ms-2">You</span>
+                                            @endif
+                                            @if(isset($entry->percentage))
+                                                <small class="text-muted ms-2">({{ $entry->percentage }}%)</small>
                                             @endif
                                         </div>
                                         <div>
@@ -359,17 +380,12 @@
             <!-- Action Buttons -->
             <div class="text-center mb-5">
                 <div class="d-flex justify-content-center gap-3 flex-wrap">
-
                     
                     @if(isset($remainingAttempts) && $remainingAttempts > 0)
                         <a href="{{ route('user.quiz.lobby', $attempt->quiz) }}" class="btn btn-warning btn-lg">
                             <i class="fas fa-redo"></i> Retake Quiz ({{ $remainingAttempts }} attempts left)
                         </a>
                     @endif
-                    
-                    <!-- <button class="btn btn-info btn-lg" onclick="shareResult()">
-                        <i class="fas fa-share-alt"></i> Share Result
-                    </button> -->
                     
                     <a href="{{ route('user.dashboard') }}" class="btn btn-primary btn-lg">
                         <i class="fas fa-home"></i> Go to Dashboard

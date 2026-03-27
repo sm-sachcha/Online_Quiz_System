@@ -64,20 +64,22 @@ class User extends Authenticatable
     {
         return $this->hasMany(QuizParticipant::class);
     }
-
-    // Categories assigned to this user
+    
+    /**
+     * Categories assigned to this user
+     */
     public function assignedCategories()
     {
-        return $this->belongsToMany(Category::class, 'category_users')
-            ->withPivot('status', 'created_at', 'updated_at')
+        return $this->belongsToMany(Category::class, 'category_users', 'user_id', 'category_id')
             ->withTimestamps();
     }
-
-    // Quizzes assigned directly to this user
+    
+    /**
+     * Quizzes directly assigned to this user
+     */
     public function assignedQuizzes()
     {
-        return $this->belongsToMany(Quiz::class, 'quiz_users')
-            ->withPivot('status', 'created_at', 'updated_at')
+        return $this->belongsToMany(Quiz::class, 'quiz_user', 'user_id', 'quiz_id')
             ->withTimestamps();
     }
 

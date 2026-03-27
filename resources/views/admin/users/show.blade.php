@@ -152,7 +152,6 @@
                                     <th>Percentage</th>
                                     <th>Status</th>
                                     <th>Date</th>
-                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -202,12 +201,6 @@
                                             <small>{{ $attempt->created_at->format('M d, Y') }}</small>
                                             <br>
                                             <small class="text-muted">{{ $attempt->created_at->diffForHumans() }}</small>
-                                        </td>
-                                        <td>
-                                            <a href="{{ route('user.quiz.result', ['quiz' => $attempt->quiz_id, 'attempt' => $attempt->id]) }}" 
-                                               class="btn btn-sm btn-info" target="_blank">
-                                                <i class="fas fa-eye"></i> View
-                                            </a>
                                         </td>
                                     </tr>
                                 @endforeach

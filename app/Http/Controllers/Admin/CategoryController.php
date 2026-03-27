@@ -126,7 +126,7 @@ class CategoryController extends Controller
             ->orderBy('name')
             ->get();
         
-        $assignedUsers = $category->assignedUsers;
+        $assignedUsers = $category->assignedUsers()->pluck('user_id');
         
         return view('admin.categories.assign-users', compact('category', 'users', 'assignedUsers'));
     }
@@ -147,34 +147,44 @@ class CategoryController extends Controller
         
         $user = User::find($request->user_id);
         
-        if ($request->action == 'assign') {
-            // Check if already assigned
-            if ($category->assignedUsers()->where('user_id', $user->id)->exists()) {
-                return response()->json(['success' => false, 'message' => 'User already assigned to this category']);
+        try {
+            if ($request->action == 'assign') {
+                // Check if already assigned
+                if ($category->assignedUsers()->where('user_id', $user->id)->exists()) {
+                    return response()->json([
+                        'success' => false, 
+                        'message' => 'User already assigned to this category'
+                    ], 400);
+                }
+                
+                // Assign the user - NO status field, just attach
+                $category->assignedUsers()->attach($user->id);
+                
+                return response()->json([
+                    'success' => true, 
+                    'message' => 'User assigned successfully',
+                    'user_name' => $user->name
+                ]);
+                
+            } else if ($request->action == 'remove') {
+                // Remove the user
+                $category->assignedUsers()->detach($user->id);
+                
+                return response()->json([
+                    'success' => true, 
+                    'message' => 'User removed successfully',
+                    'user_name' => $user->name
+                ]);
             }
             
-            $category->assignedUsers()->attach($user->id, [
-                'status' => 'active',
-                'created_at' => now(),
-                'updated_at' => now()
-            ]);
+            return response()->json(['success' => false, 'message' => 'Invalid action'], 400);
             
+        } catch (\Exception $e) {
+            \Log::error('Category assignment error: ' . $e->getMessage());
             return response()->json([
-                'success' => true, 
-                'message' => 'User assigned successfully',
-                'user_name' => $user->name
-            ]);
-            
-        } else if ($request->action == 'remove') {
-            $category->assignedUsers()->detach($user->id);
-            
-            return response()->json([
-                'success' => true, 
-                'message' => 'User removed successfully',
-                'user_name' => $user->name
-            ]);
+                'success' => false, 
+                'message' => 'Failed to update assignment: ' . $e->getMessage()
+            ], 500);
         }
-        
-        return response()->json(['success' => false, 'message' => 'Invalid action'], 400);
     }
 }

@@ -3,13 +3,132 @@
 @section('title', 'Quiz Session - ' . $quiz->title)
 
 @section('content')
+<style>
+    .option-btn {
+        transition: all 0.3s;
+        text-align: left;
+        padding: 15px;
+        margin-bottom: 10px;
+        width: 100%;
+        white-space: normal;
+        word-wrap: break-word;
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
+        background: white;
+        cursor: pointer;
+    }
+    .option-btn:hover:not(:disabled) {
+        transform: translateX(5px);
+        background-color: #f8f9fa;
+        border-color: #007bff;
+    }
+    .option-selected {
+        background-color: #007bff !important;
+        color: white !important;
+        border-color: #007bff !important;
+    }
+    .option-correct {
+        background-color: #28a745 !important;
+        color: white !important;
+        border-color: #28a745 !important;
+    }
+    .option-incorrect {
+        background-color: #dc3545 !important;
+        color: white !important;
+        border-color: #dc3545 !important;
+    }
+    .timer {
+        font-size: 1.2rem;
+        font-weight: bold;
+        font-family: monospace;
+        background: #f8f9fa;
+        padding: 5px 12px;
+        border-radius: 25px;
+        display: inline-block;
+    }
+    .timer-danger {
+        background-color: #dc3545 !important;
+        color: white !important;
+        animation: pulse 1s infinite;
+    }
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.7; }
+        100% { opacity: 1; }
+    }
+    .feedback-message {
+        padding: 12px;
+        border-radius: 8px;
+        margin-top: 15px;
+        animation: fadeIn 0.3s ease;
+    }
+    .feedback-correct {
+        background-color: #d4edda;
+        border-left: 4px solid #28a745;
+        color: #155724;
+    }
+    .feedback-incorrect {
+        background-color: #f8d7da;
+        border-left: 4px solid #dc3545;
+        color: #721c24;
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .next-question-loader {
+        text-align: center;
+        margin-top: 20px;
+        padding: 10px;
+        display: none;
+    }
+    .next-question-loader .spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #3498db;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+        display: none;
+    }
+    .quiz-timer {
+        font-family: monospace;
+        font-weight: bold;
+    }
+</style>
+
 <div class="row mb-3">
     <div class="col-md-8">
         <h3><i class="fas fa-question-circle"></i> {{ $quiz->title }}</h3>
+        <p class="text-muted">Question <strong id="currentQuestionNum">{{ $answeredCount + 1 }}</strong> of <strong>{{ $totalQuestions }}</strong></p>
     </div>
     <div class="col-md-4 text-end">
-        <span class="badge bg-primary fs-6">Question {{ $answeredCount + 1 }} of {{ $totalQuestions }}</span>
-        <span class="badge bg-success fs-6 ms-2" id="score">Score: {{ $attempt->score }}</span>
+        <span class="badge bg-secondary fs-5 p-2 me-2">
+            <i class="fas fa-hourglass-half"></i> Quiz: <span id="quizTimer" class="quiz-timer">00:00</span>
+        </span>
+        <span class="badge bg-primary fs-5 p-2 me-2">
+            <i class="fas fa-star"></i> Score: <span id="score">{{ $attempt->score }}</span>
+        </span>
+        <span class="badge bg-info fs-5 p-2">
+            <i class="fas fa-clock"></i> Question: <span id="timer" class="timer">00:00</span>
+        </span>
     </div>
 </div>
 
@@ -17,30 +136,66 @@
     <div class="col-md-8">
         <div class="card shadow">
             <div class="card-header bg-primary text-white">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0" id="questionText">{{ $currentQuestion->question_text }}</h5>
-                    <span class="badge bg-warning text-dark timer" id="timer">00:00</span>
-                </div>
+                <h5 class="mb-0" id="questionText">{{ $currentQuestion->question_text }}</h5>
             </div>
             <div class="card-body">
-                <div id="optionsContainer" class="row g-3">
-                    @foreach($currentQuestion->options as $index => $option)
-                        <div class="col-md-6">
-                            <button class="btn btn-outline-primary w-100 option-btn text-start p-3" 
-                                    data-option-id="{{ $option->id }}"
-                                    data-option-index="{{ $index }}">
-                                <div class="d-flex align-items-center">
-                                    <span class="badge bg-secondary me-2">{{ chr(65 + $index) }}</span>
-                                    {{ $option->option_text }}
-                                </div>
-                            </button>
+                @if($currentQuestion->question_type == 'multiple_choice')
+                    <div class="alert alert-info">
+                        <i class="fas fa-check-double"></i> 
+                        <strong>Multiple Select Question</strong> - Select ALL correct answers. Click "Submit" when done.
+                        <div class="mt-2">
+                            <span class="badge bg-primary">Selected: <span id="selectedCount">0</span></span>
+                            <span class="badge bg-secondary">Correct answers: {{ $currentQuestion->options->where('is_correct', true)->count() }}</span>
                         </div>
+                    </div>
+                @endif
+
+                <div id="optionsContainer">
+                    @foreach($currentQuestion->options as $index => $option)
+                        <button class="option-btn" 
+                                data-option-id="{{ $option->id }}"
+                                data-option-index="{{ $index }}"
+                                data-is-correct="{{ $option->is_correct ? 'true' : 'false' }}"
+                                data-question-type="{{ $currentQuestion->question_type }}">
+                            <div class="d-flex align-items-center">
+                                <span class="badge bg-secondary me-3" style="font-size: 1rem; min-width: 35px;">
+                                    {{ chr(65 + $index) }}
+                                </span>
+                                <span class="flex-grow-1">{{ $option->option_text }}</span>
+                                @if($currentQuestion->question_type == 'multiple_choice')
+                                    <i class="fas fa-check-circle selection-check" style="opacity: 0; font-size: 1.2rem;"></i>
+                                @endif
+                            </div>
+                        </button>
                     @endforeach
                 </div>
-                <div class="text-center mt-4">
-                    <small class="text-muted">
-                        <i class="fas fa-info-circle"></i> Select an option to submit your answer
-                    </small>
+
+                @if($currentQuestion->question_type == 'multiple_choice')
+                    <div class="text-center mt-4">
+                        <button class="btn btn-success btn-lg" id="submitMultipleBtn">
+                            <i class="fas fa-check-double"></i> Submit Answers
+                        </button>
+                    </div>
+                @endif
+
+                <div id="feedback" class="feedback-message" style="display: none;"></div>
+                <div class="next-question-loader" id="nextQuestionLoader">
+                    <div class="spinner"></div>
+                    <p class="mt-2">Loading next question...</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-1">
+                    <span>Quiz Progress</span>
+                    <span id="progressText">{{ $answeredCount }}/{{ $totalQuestions }} answered</span>
+                </div>
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar bg-success" id="progressBar" 
+                         style="width: {{ ($answeredCount / $totalQuestions) * 100 }}%">
+                    </div>
                 </div>
             </div>
         </div>
@@ -51,41 +206,56 @@
             <div class="card-header bg-info text-white">
                 <h5 class="mb-0"><i class="fas fa-trophy"></i> Live Leaderboard</h5>
             </div>
-            <div class="card-body p-0">
-                <div id="leaderboard" class="list-group list-group-flush">
-                    <div class="text-center py-3 text-muted">
-                        <i class="fas fa-spinner fa-spin"></i> Loading leaderboard...
-                    </div>
-                </div>
+            <div class="card-body p-0" id="leaderboard">
+                <div class="text-center py-3 text-muted">Loading...</div>
             </div>
         </div>
         
         <div class="card mt-3">
             <div class="card-header bg-secondary text-white">
-                <h5 class="mb-0"><i class="fas fa-chart-line"></i> Your Progress</h5>
+                <h5 class="mb-0"><i class="fas fa-chart-line"></i> Your Stats</h5>
             </div>
             <div class="card-body">
-                <div class="progress mb-2" style="height: 20px;">
-                    <div class="progress-bar bg-success" role="progressbar" 
-                         style="width: {{ ($answeredCount / $totalQuestions) * 100 }}%">
-                        {{ $answeredCount }}/{{ $totalQuestions }}
-                    </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Correct Answers:</span>
+                    <strong id="correctCount" class="text-success">{{ $attempt->correct_answers }}</strong>
                 </div>
-                <p class="mb-0">
-                    <i class="fas fa-check-circle text-success"></i> Correct: {{ $attempt->correct_answers }} |
-                    <i class="fas fa-times-circle text-danger"></i> Incorrect: {{ $attempt->incorrect_answers }}
-                </p>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Incorrect Answers:</span>
+                    <strong id="incorrectCount" class="text-danger">{{ $attempt->incorrect_answers }}</strong>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Points Earned:</span>
+                    <strong id="pointsDisplay" class="text-primary">{{ $attempt->score }}</strong>
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between">
+                    <span>This Question:</span>
+                    <strong>{{ $currentQuestion->points }} pts</strong>
+                </div>
+                <div class="d-flex justify-content-between">
+                    <span>Time Limit:</span>
+                    <strong>{{ $currentQuestion->time_seconds }}s</strong>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<form id="submitAnswerForm" method="POST" style="display: none;">
+<form id="answerForm" style="display: none;">
     @csrf
-    <input type="hidden" name="question_id" id="submitQuestionId">
-    <input type="hidden" name="option_id" id="submitOptionId">
-    <input type="hidden" name="time_taken" id="submitTimeTaken">
+    <input type="hidden" name="question_id" id="questionId">
+    <input type="hidden" name="option_id" id="optionId">
+    <input type="hidden" name="selected_options" id="selectedOptions">
+    <input type="hidden" name="time_taken" id="timeTaken">
+    <input type="hidden" name="question_type" id="questionType">
 </form>
+
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="spinner-border text-light" style="width: 3rem; height: 3rem;" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+</div>
 
 @push('scripts')
 <script src="https://js.pusher.com/7.2/pusher.min.js"></script>
@@ -93,53 +263,421 @@
     const quizId = {{ $quiz->id }};
     const attemptId = {{ $attempt->id }};
     const questionId = {{ $currentQuestion->id }};
+    const questionType = '{{ $currentQuestion->question_type }}';
     const timeSeconds = {{ $currentQuestion->time_seconds }};
+    const showAnswer = {{ $currentQuestion->show_answer ? 'true' : 'false' }};
+    const isMultipleChoice = questionType === 'multiple_choice';
+    
+    const quizDuration = {{ $quiz->duration_minutes }} * 60;
+    const quizStartTime = new Date('{{ $attempt->started_at }}').getTime();
+    
     let timeLeft = timeSeconds;
     let timerInterval;
+    let quizTimerInterval;
     let answerSubmitted = false;
     let startTime = Date.now();
+    let selectedOptions = [];
+    let heartbeatInterval;
 
-    // Initialize Pusher
+    function skipQuestion() {
+        if (answerSubmitted) return;
+        answerSubmitted = true;
+        clearInterval(timerInterval);
+        
+        const timeTaken = Math.min(Math.floor((Date.now() - startTime) / 1000), timeSeconds);
+        
+        const formData = new FormData();
+        formData.append('_token', '{{ csrf_token() }}');
+        formData.append('question_id', questionId);
+        formData.append('option_id', '');
+        formData.append('time_taken', timeTaken);
+        formData.append('question_type', questionType);
+        
+        showLoading();
+        
+        fetch(`/user/quiz/attempt/${quizId}/${attemptId}/submit`, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateUI(data);
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+                answerSubmitted = false;
+                startTimer();
+                hideLoading();
+            }
+        })
+        .catch(err => {
+            console.error('Error:', err);
+            alert('Network error. Please try again.');
+            answerSubmitted = false;
+            startTimer();
+            hideLoading();
+        });
+    }
+
+    function updateQuizTimer() {
+        const elapsed = Math.floor((Date.now() - quizStartTime) / 1000);
+        const remaining = quizDuration - elapsed;
+        
+        if (remaining <= 0 && !answerSubmitted) {
+            clearInterval(timerInterval);
+            clearInterval(quizTimerInterval);
+            alert('Time is up! Submitting your answers...');
+            skipQuestion();
+            return;
+        }
+        
+        const minutes = Math.floor(Math.max(0, remaining) / 60);
+        const seconds = Math.max(0, remaining) % 60;
+        const quizTimerEl = document.getElementById('quizTimer');
+        if (quizTimerEl) {
+            quizTimerEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            if (remaining < 60 && remaining > 0) {
+                quizTimerEl.classList.add('timer-danger');
+            }
+        }
+    }
+    
+    function startTimer() {
+        updateTimerDisplay();
+        timerInterval = setInterval(() => {
+            if (!answerSubmitted) {
+                timeLeft--;
+                updateTimerDisplay();
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    skipQuestion();
+                }
+            }
+        }, 1000);
+    }
+
+    function updateTimerDisplay() {
+        const minutes = Math.floor(Math.max(0, timeLeft) / 60);
+        const seconds = Math.max(0, timeLeft) % 60;
+        const timerEl = document.getElementById('timer');
+        if (timerEl) {
+            timerEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            if (timeLeft < 10 && timeLeft > 0) {
+                timerEl.classList.add('timer-danger');
+            } else {
+                timerEl.classList.remove('timer-danger');
+            }
+        }
+    }
+
+    function showFeedback(isCorrect, pointsEarned, explanation, correctAnswerText) {
+        const feedbackDiv = document.getElementById('feedback');
+        if (!feedbackDiv) return;
+        feedbackDiv.style.display = 'block';
+        
+        if (isCorrect) {
+            feedbackDiv.className = 'feedback-message feedback-correct';
+            feedbackDiv.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-check-circle text-success fa-2x me-3"></i>
+                    <div>
+                        <strong class="text-success">Correct!</strong>
+                        <p class="mb-0">You earned ${pointsEarned} points.</p>
+                        ${explanation ? `<small class="text-muted">${explanation}</small>` : ''}
+                    </div>
+                </div>
+            `;
+        } else {
+            let correctAnswerHtml = '';
+            if (showAnswer && correctAnswerText) {
+                correctAnswerHtml = `<p class="mb-0 mt-2"><strong>Correct answer:</strong> ${correctAnswerText}</p>`;
+            }
+            feedbackDiv.className = 'feedback-message feedback-incorrect';
+            feedbackDiv.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-times-circle text-danger fa-2x me-3"></i>
+                    <div>
+                        <strong class="text-danger">Incorrect!</strong>
+                        <p class="mb-0">You earned 0 points.</p>
+                        ${correctAnswerHtml}
+                        ${explanation ? `<small class="text-muted">${explanation}</small>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        
+        setTimeout(() => {
+            feedbackDiv.style.display = 'none';
+        }, 2000);
+    }
+
+    function showLoading() {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) overlay.style.display = 'flex';
+    }
+    
+    function hideLoading() {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) overlay.style.display = 'none';
+    }
+    
+    function showNextQuestionLoader() {
+        const loader = document.getElementById('nextQuestionLoader');
+        if (loader) loader.style.display = 'block';
+    }
+
+    function loadNextQuestion() {
+        showNextQuestionLoader();
+        setTimeout(() => {
+            window.location.reload();
+        }, 1500);
+    }
+
+    function submitAnswer(optionId) {
+        if (answerSubmitted) return;
+        answerSubmitted = true;
+        clearInterval(timerInterval);
+        
+        const timeTaken = Math.min(Math.floor((Date.now() - startTime) / 1000), timeSeconds);
+        
+        const formData = new FormData();
+        formData.append('_token', '{{ csrf_token() }}');
+        formData.append('question_id', questionId);
+        formData.append('option_id', optionId);
+        formData.append('time_taken', timeTaken);
+        formData.append('question_type', questionType);
+        
+        showLoading();
+        
+        fetch(`/user/quiz/attempt/${quizId}/${attemptId}/submit`, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateUI(data);
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+                answerSubmitted = false;
+                startTimer();
+                hideLoading();
+            }
+        })
+        .catch(err => {
+            console.error('Error:', err);
+            alert('Network error. Please try again.');
+            answerSubmitted = false;
+            startTimer();
+            hideLoading();
+        });
+    }
+
+    function submitMultipleChoice(isSkip = false) {
+        if (answerSubmitted) return;
+        answerSubmitted = true;
+        clearInterval(timerInterval);
+        
+        const timeTaken = Math.min(Math.floor((Date.now() - startTime) / 1000), timeSeconds);
+        
+        const formData = new FormData();
+        formData.append('_token', '{{ csrf_token() }}');
+        formData.append('question_id', questionId);
+        if (isSkip) {
+            formData.append('selected_options', JSON.stringify([]));
+        } else {
+            formData.append('selected_options', JSON.stringify(selectedOptions));
+        }
+        formData.append('time_taken', timeTaken);
+        formData.append('question_type', 'multiple_choice');
+        
+        showLoading();
+        
+        fetch(`/user/quiz/attempt/${quizId}/${attemptId}/submit-multiple`, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Accept': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                updateUI(data);
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error'));
+                answerSubmitted = false;
+                startTimer();
+                hideLoading();
+            }
+        })
+        .catch(err => {
+            console.error('Error:', err);
+            alert('Network error. Please try again.');
+            answerSubmitted = false;
+            startTimer();
+            hideLoading();
+        });
+    }
+
+    function updateUI(data) {
+        const scoreEl = document.getElementById('score');
+        const pointsDisplayEl = document.getElementById('pointsDisplay');
+        const correctCountEl = document.getElementById('correctCount');
+        const incorrectCountEl = document.getElementById('incorrectCount');
+        const progressTextEl = document.getElementById('progressText');
+        const progressBarEl = document.getElementById('progressBar');
+        
+        if (scoreEl) scoreEl.textContent = data.current_score;
+        if (pointsDisplayEl) pointsDisplayEl.textContent = data.current_score;
+        if (correctCountEl) correctCountEl.textContent = data.correct_answers;
+        if (incorrectCountEl) incorrectCountEl.textContent = data.incorrect_answers;
+        if (progressTextEl) progressTextEl.textContent = `${data.answered_count}/${data.total_questions} answered`;
+        if (progressBarEl) progressBarEl.style.width = `${(data.answered_count / data.total_questions) * 100}%`;
+        
+        const allButtons = document.querySelectorAll('.option-btn');
+        allButtons.forEach(btn => btn.disabled = true);
+        
+        if (isMultipleChoice) {
+            allButtons.forEach(btn => {
+                const isCorrectOption = btn.dataset.isCorrect === 'true';
+                if (isCorrectOption) {
+                    btn.classList.add('option-correct');
+                } else if (selectedOptions.includes(parseInt(btn.dataset.optionId))) {
+                    btn.classList.add('option-incorrect');
+                }
+            });
+            
+            let correctAnswerText = '';
+            if (showAnswer) {
+                allButtons.forEach(btn => {
+                    if (btn.dataset.isCorrect === 'true') {
+                        const answerSpan = btn.querySelector('span:last-child');
+                        if (answerSpan) correctAnswerText += (correctAnswerText ? ', ' : '') + answerSpan.innerText;
+                    }
+                });
+            }
+            
+            showFeedback(data.is_correct, data.points_earned, '', correctAnswerText);
+        } else {
+            allButtons.forEach(btn => {
+                if (data.is_correct && btn.dataset.optionId == data.selected_option_id) {
+                    btn.classList.add('option-correct');
+                } else if (!data.is_correct && btn.dataset.optionId == data.selected_option_id) {
+                    btn.classList.add('option-incorrect');
+                }
+            });
+            
+            let correctAnswerText = '';
+            if (showAnswer && !data.is_correct && data.correct_option_id) {
+                allButtons.forEach(btn => {
+                    if (btn.dataset.optionId == data.correct_option_id) {
+                        btn.classList.add('option-correct');
+                        const answerSpan = btn.querySelector('span:last-child');
+                        if (answerSpan) correctAnswerText = answerSpan.innerText;
+                    }
+                });
+            }
+            
+            showFeedback(data.is_correct, data.points_earned, '', correctAnswerText);
+        }
+        
+        hideLoading();
+        
+        if (data.is_completed) {
+            setTimeout(() => {
+                window.location.href = `/user/quiz/result/${quizId}/${attemptId}`;
+            }, 2000);
+        } else {
+            loadNextQuestion();
+        }
+    }
+
+    // Event Listeners
+    if (isMultipleChoice) {
+        const selectedCountSpan = document.getElementById('selectedCount');
+        document.querySelectorAll('.option-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                if (answerSubmitted) return;
+                const optionId = parseInt(this.dataset.optionId);
+                const index = selectedOptions.indexOf(optionId);
+                const checkIcon = this.querySelector('.selection-check');
+                if (index === -1) {
+                    selectedOptions.push(optionId);
+                    this.classList.add('option-selected');
+                    if (checkIcon) checkIcon.style.opacity = '1';
+                } else {
+                    selectedOptions.splice(index, 1);
+                    this.classList.remove('option-selected');
+                    if (checkIcon) checkIcon.style.opacity = '0';
+                }
+                if (selectedCountSpan) selectedCountSpan.textContent = selectedOptions.length;
+            });
+        });
+        
+        const submitMultipleBtn = document.getElementById('submitMultipleBtn');
+        if (submitMultipleBtn) {
+            submitMultipleBtn.addEventListener('click', function() {
+                if (!answerSubmitted) {
+                    if (selectedOptions.length > 0) {
+                        submitMultipleChoice();
+                    } else {
+                        if (confirm('No answers selected. Skip this question?')) {
+                            submitMultipleChoice(true);
+                        }
+                    }
+                }
+            });
+        }
+    } else {
+        document.querySelectorAll('.option-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                if (!answerSubmitted) {
+                    submitAnswer(this.dataset.optionId);
+                }
+            });
+        });
+    }
+
+    // Pusher for leaderboard
     const pusher = new Pusher('{{ env('PUSHER_APP_KEY') }}', {
         cluster: '{{ env('PUSHER_APP_CLUSTER') }}',
         authEndpoint: '/broadcasting/auth',
-        auth: {
-            headers: {
-                'X-CSRF-Token': '{{ csrf_token() }}'
-            }
-        }
+        auth: { headers: { 'X-CSRF-Token': '{{ csrf_token() }}' } }
     });
 
     const channel = pusher.subscribe('presence-quiz.' + quizId);
-
     channel.bind('leaderboard.updated', function(data) {
         updateLeaderboard(data.leaderboard);
-    });
-
-    channel.bind('answer.submitted', function(data) {
-        // Visual feedback for other answers
-        if (data.user_id !== {{ Auth::id() }}) {
-            showNotification(`${data.user_name} answered!`, 'info');
-        }
     });
 
     function updateLeaderboard(leaderboard) {
         const container = document.getElementById('leaderboard');
         if (!container) return;
-        
         if (!leaderboard || leaderboard.length === 0) {
             container.innerHTML = '<div class="text-center py-3 text-muted">No scores yet</div>';
             return;
         }
-        
         container.innerHTML = '';
-        leaderboard.forEach((entry, index) => {
+        leaderboard.forEach(entry => {
             const item = document.createElement('div');
-            item.className = 'list-group-item d-flex justify-content-between align-items-center leaderboard-item';
+            item.className = 'list-group-item d-flex justify-content-between align-items-center';
+            if (entry.user_id === {{ Auth::id() }}) {
+                item.classList.add('bg-light', 'border-primary');
+            }
             item.innerHTML = `
                 <div>
                     <span class="badge bg-secondary me-2">${entry.rank}</span>
-                    <strong>${entry.user_name}</strong>
+                    <strong>${escapeHtml(entry.user_name)}</strong>
                     ${entry.user_id === {{ Auth::id() }} ? '<span class="badge bg-info ms-2">You</span>' : ''}
                 </div>
                 <span class="badge bg-primary">${entry.score} pts</span>
@@ -148,141 +686,66 @@
         });
     }
 
-    function startTimer() {
-        updateTimerDisplay();
-        timerInterval = setInterval(() => {
-            timeLeft--;
-            updateTimerDisplay();
-            
-            if (timeLeft <= 0) {
-                clearInterval(timerInterval);
-                if (!answerSubmitted) {
-                    submitAnswer(null);
-                }
-            }
-        }, 1000);
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
-    function updateTimerDisplay() {
-        const minutes = Math.floor(timeLeft / 60);
-        const seconds = timeLeft % 60;
-        const timerEl = document.getElementById('timer');
-        timerEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-        
-        if (timeLeft < 10) {
-            timerEl.classList.add('timer-danger');
-            timerEl.classList.add('bg-danger');
-            timerEl.classList.remove('bg-warning');
-        } else if (timeLeft < 30) {
-            timerEl.classList.remove('timer-danger');
-            timerEl.classList.add('bg-warning');
-        }
-    }
-
-    function submitAnswer(optionId) {
-        if (answerSubmitted) return;
-        
-        answerSubmitted = true;
-        clearInterval(timerInterval);
-        
-        const timeTaken = Math.floor((Date.now() - startTime) / 1000);
-        
-        document.getElementById('submitQuestionId').value = questionId;
-        document.getElementById('submitOptionId').value = optionId;
-        document.getElementById('submitTimeTaken').value = timeTaken;
-        
-        const form = document.getElementById('submitAnswerForm');
-        const formData = new FormData(form);
-        
-        fetch(`/user/quiz/attempt/${quizId}/${attemptId}/submit`, {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-CSRF-TOKEN': '{{ csrf_token() }}'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                document.getElementById('score').textContent = 'Score: ' + data.current_score;
-                
-                // Highlight correct/incorrect answer
-                document.querySelectorAll('.option-btn').forEach(btn => {
-                    btn.disabled = true;
-                    if (data.is_correct && btn.dataset.optionId == optionId) {
-                        btn.classList.remove('btn-outline-primary');
-                        btn.classList.add('btn-success');
-                    } else if (!data.is_correct && btn.dataset.optionId == optionId) {
-                        btn.classList.remove('btn-outline-primary');
-                        btn.classList.add('btn-danger');
-                    }
-                });
-                
-                // Show feedback
-                if (data.is_correct) {
-                    showNotification('✓ Correct! +' + data.points_earned + ' points', 'success');
-                } else {
-                    showNotification('✗ Incorrect!', 'danger');
-                }
-                
-                // Move to next question after delay
-                setTimeout(() => {
-                    window.location.reload();
-                }, 2000);
-            }
-        });
-    }
-
-    function showNotification(message, type) {
-        const alertDiv = document.createElement('div');
-        alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 end-0 m-3`;
-        alertDiv.style.zIndex = '9999';
-        alertDiv.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-        document.body.appendChild(alertDiv);
-        
-        setTimeout(() => {
-            alertDiv.remove();
-        }, 2000);
-    }
-
-    // Add click handlers to options
-    document.querySelectorAll('.option-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            if (!answerSubmitted) {
-                submitAnswer(this.dataset.optionId);
-            }
-        });
-    });
-
-    // Anti-cheat: detect tab switching
+    // Anti-cheat
     document.addEventListener('visibilitychange', function() {
         if (document.hidden && !answerSubmitted) {
             fetch('/api/v1/anti-cheat/tab-switch', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                },
-                body: JSON.stringify({
-                    attempt_id: attemptId,
-                    action: 'blur'
-                })
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': '{{ csrf_token() }}' },
+                body: JSON.stringify({ attempt_id: attemptId, action: 'blur' })
             });
-            showNotification('Warning: Tab switching detected!', 'warning');
         }
     });
 
-    // Prevent right click
     document.addEventListener('contextmenu', function(e) {
         e.preventDefault();
         return false;
     });
 
-    // Start timer
+    // Heartbeat
+    function sendHeartbeat() {
+        if (answerSubmitted) return;
+        
+        fetch(`/user/quiz/attempt/${quizId}/${attemptId}/heartbeat`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}'
+            },
+            body: JSON.stringify({})
+        }).catch(err => console.error('Heartbeat error:', err));
+    }
+
+    heartbeatInterval = setInterval(sendHeartbeat, 15000);
+
+    window.addEventListener('beforeunload', function() {
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        if (timerInterval) clearInterval(timerInterval);
+        if (quizTimerInterval) clearInterval(quizTimerInterval);
+        
+        fetch(`/user/quiz/attempt/${quizId}/${attemptId}/leave`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}'
+            },
+            keepalive: true,
+            body: JSON.stringify({})
+        }).catch(() => {});
+    });
+
+    // Start timers
     startTimer();
+    quizTimerInterval = setInterval(updateQuizTimer, 1000);
+    updateQuizTimer();
+    
+    console.log('Quiz session initialized');
 </script>
 @endpush
 @endsection

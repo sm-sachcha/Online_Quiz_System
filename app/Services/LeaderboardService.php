@@ -11,21 +11,20 @@ use Illuminate\Support\Facades\DB;
 class LeaderboardService
 {
     /**
-     * Update leaderboard for a quiz, keeping the best score per user
+     * Update leaderboard for a quiz - only update if new score is better
      */
     public function updateLeaderboard(Quiz $quiz)
     {
-        // Get all completed attempts, group by user, and get the best score for each user
-        $attempts = QuizAttempt::with('user')
+        // Get all completed attempts, get the best score per user
+        $bestAttempts = QuizAttempt::with('user')
             ->where('quiz_id', $quiz->id)
             ->where('status', 'completed')
             ->get()
             ->groupBy('user_id')
             ->map(function ($userAttempts) {
                 // For each user, get the attempt with the highest score
-                // If scores are equal, take the one with earliest completion time
                 return $userAttempts->sortByDesc(function ($attempt) {
-                    return $attempt->score . '.' . $attempt->ended_at->timestamp;
+                    return $attempt->score;
                 })->first();
             })
             ->sortByDesc(function ($attempt) {
@@ -38,39 +37,55 @@ class LeaderboardService
         
         DB::beginTransaction();
         try {
-            // Delete all existing leaderboard entries for this quiz
-            Leaderboard::where('quiz_id', $quiz->id)->delete();
+            // Get existing leaderboard entries
+            $existingEntries = Leaderboard::where('quiz_id', $quiz->id)
+                ->get()
+                ->keyBy('user_id');
             
-            foreach ($attempts as $attempt) {
+            foreach ($bestAttempts as $attempt) {
                 $percentage = $quiz->total_points > 0 
-                    ? ($attempt->score / $quiz->total_points) * 100 
+                    ? round(($attempt->score / $quiz->total_points) * 100, 1)
                     : 0;
                 
-                // Create new leaderboard entry
-                $leaderboardEntry = Leaderboard::create([
-                    'user_id' => $attempt->user_id,
-                    'quiz_id' => $quiz->id,
-                    'score' => $attempt->score,
-                    'rank' => $rank,
-                    'metadata' => [
-                        'correct_answers' => $attempt->correct_answers,
-                        'total_questions' => $attempt->total_questions,
-                        'percentage' => round($percentage, 1),
-                        'attempt_id' => $attempt->id,
-                        'attempt_number' => $this->getAttemptNumber($attempt->user_id, $quiz->id, $attempt->id),
-                        'completed_at' => $attempt->ended_at
-                    ]
-                ]);
+                $accuracy = $attempt->total_questions > 0 
+                    ? round(($attempt->correct_answers / $attempt->total_questions) * 100, 1)
+                    : 0;
+                
+                $existingEntry = $existingEntries->get($attempt->user_id);
+                
+                // Only update if this is a new entry or if score is higher than existing
+                if (!$existingEntry || $attempt->score > $existingEntry->score) {
+                    Leaderboard::updateOrCreate(
+                        [
+                            'quiz_id' => $quiz->id,
+                            'user_id' => $attempt->user_id
+                        ],
+                        [
+                            'score' => $attempt->score,
+                            'rank' => $rank,
+                            'metadata' => [
+                                'correct_answers' => $attempt->correct_answers,
+                                'incorrect_answers' => $attempt->incorrect_answers,
+                                'total_questions' => $attempt->total_questions,
+                                'percentage' => $percentage,
+                                'accuracy' => $accuracy,
+                                'attempt_id' => $attempt->id,
+                                'attempt_number' => $this->getAttemptNumber($attempt->user_id, $quiz->id, $attempt->id),
+                                'completed_at' => $attempt->ended_at
+                            ]
+                        ]
+                    );
+                }
                 
                 $leaderboard[] = [
                     'rank' => $rank,
                     'user_id' => $attempt->user_id,
                     'user_name' => $attempt->user->name,
                     'score' => $attempt->score,
+                    'percentage' => $percentage,
+                    'accuracy' => $accuracy,
                     'correct_answers' => $attempt->correct_answers,
-                    'percentage' => round($percentage, 1),
-                    'attempt_number' => $this->getAttemptNumber($attempt->user_id, $quiz->id, $attempt->id),
-                    'best_score' => $this->isBestScore($attempt->user_id, $quiz->id, $attempt->score)
+                    'total_questions' => $attempt->total_questions,
                 ];
                 
                 $rank++;
@@ -87,7 +102,7 @@ class LeaderboardService
     }
     
     /**
-     * Get the attempt number for a user's quiz attempt
+     * Get the attempt number for a specific attempt
      */
     private function getAttemptNumber($userId, $quizId, $attemptId)
     {
@@ -107,19 +122,6 @@ class LeaderboardService
     }
     
     /**
-     * Check if this is the user's best score for this quiz
-     */
-    private function isBestScore($userId, $quizId, $currentScore)
-    {
-        $bestScore = QuizAttempt::where('user_id', $userId)
-            ->where('quiz_id', $quizId)
-            ->where('status', 'completed')
-            ->max('score');
-        
-        return $currentScore >= ($bestScore ?? 0);
-    }
-    
-    /**
      * Get user's best attempt for a quiz
      */
     public function getUserBestAttempt($userId, $quizId)
@@ -133,31 +135,82 @@ class LeaderboardService
     }
     
     /**
-     * Check if user can retake quiz
+     * Get all attempts for a user on a quiz
      */
-    public function canRetakeQuiz($userId, $quiz)
+    public function getUserAttempts($userId, $quizId)
     {
-        $completedAttempts = QuizAttempt::where('user_id', $userId)
-            ->where('quiz_id', $quiz->id)
+        return QuizAttempt::where('user_id', $userId)
+            ->where('quiz_id', $quizId)
             ->where('status', 'completed')
-            ->count();
-        
-        return $completedAttempts < $quiz->max_attempts;
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function ($attempt, $index) use ($quizId, $userId) {
+                $totalAttempts = QuizAttempt::where('user_id', $userId)
+                    ->where('quiz_id', $quizId)
+                    ->where('status', 'completed')
+                    ->count();
+                
+                $percentage = $attempt->quiz->total_points > 0 
+                    ? round(($attempt->score / $attempt->quiz->total_points) * 100, 1)
+                    : 0;
+                
+                $accuracy = $attempt->total_questions > 0 
+                    ? round(($attempt->correct_answers / $attempt->total_questions) * 100, 1)
+                    : 0;
+                
+                $isBest = $this->isBestScore($userId, $quizId, $attempt->score);
+                
+                return [
+                    'attempt_number' => $totalAttempts - $index,
+                    'attempt_id' => $attempt->id,
+                    'score' => $attempt->score,
+                    'percentage' => $percentage,
+                    'accuracy' => $accuracy,
+                    'correct_answers' => $attempt->correct_answers,
+                    'incorrect_answers' => $attempt->incorrect_answers,
+                    'total_questions' => $attempt->total_questions,
+                    'passed' => $percentage >= $attempt->quiz->passing_score,
+                    'is_best' => $isBest,
+                    'completed_at' => $attempt->ended_at,
+                    'created_at' => $attempt->created_at,
+                ];
+            });
     }
     
     /**
-     * Get user's remaining attempts
+     * Check if a score is the user's best
      */
-    public function getRemainingAttempts($userId, $quiz)
+    private function isBestScore($userId, $quizId, $score)
     {
-        $completedAttempts = QuizAttempt::where('user_id', $userId)
-            ->where('quiz_id', $quiz->id)
+        $bestScore = QuizAttempt::where('user_id', $userId)
+            ->where('quiz_id', $quizId)
             ->where('status', 'completed')
-            ->count();
+            ->max('score');
         
-        return max(0, $quiz->max_attempts - $completedAttempts);
+        return $score >= ($bestScore ?? 0);
     }
     
+    /**
+     * Get user's rank for a quiz
+     */
+    public function getUserRank($userId, $quizId)
+    {
+        $leaderboard = Leaderboard::where('quiz_id', $quizId)
+            ->orderBy('rank')
+            ->get();
+        
+        foreach ($leaderboard as $entry) {
+            if ($entry->user_id == $userId) {
+                return $entry->rank;
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Get leaderboard for a quiz
+     */
     public function getLeaderboard(Quiz $quiz)
     {
         return Leaderboard::with('user')
@@ -170,11 +223,16 @@ class LeaderboardService
                     'user_id' => $entry->user_id,
                     'user_name' => $entry->user->name,
                     'score' => $entry->score,
+                    'percentage' => $entry->metadata['percentage'] ?? 0,
+                    'accuracy' => $entry->metadata['accuracy'] ?? 0,
                     'metadata' => $entry->metadata
                 ];
             });
     }
     
+    /**
+     * Get global leaderboard
+     */
     public function getGlobalLeaderboard()
     {
         return UserProfile::orderByDesc('total_points')
@@ -189,47 +247,6 @@ class LeaderboardService
                     'total_points' => $profile->total_points,
                     'quizzes_attempted' => $profile->quizzes_attempted,
                     'quizzes_won' => $profile->quizzes_won
-                ];
-            });
-    }
-    
-    public function getUserQuizRank(Quiz $quiz, $userId)
-    {
-        $leaderboard = Leaderboard::where('quiz_id', $quiz->id)
-            ->where('user_id', $userId)
-            ->first();
-        
-        if ($leaderboard) {
-            return $leaderboard->rank;
-        }
-        
-        return null;
-    }
-    
-    /**
-     * Get user's attempt history for a quiz
-     */
-    public function getUserAttemptHistory($userId, $quizId)
-    {
-        return QuizAttempt::where('user_id', $userId)
-            ->where('quiz_id', $quizId)
-            ->where('status', 'completed')
-            ->orderByDesc('created_at')
-            ->get()
-            ->map(function ($attempt, $index) use ($quizId) {
-                $totalAttempts = QuizAttempt::where('user_id', $attempt->user_id)
-                    ->where('quiz_id', $quizId)
-                    ->where('status', 'completed')
-                    ->count();
-                    
-                return [
-                    'attempt_number' => $totalAttempts - $index,
-                    'score' => $attempt->score,
-                    'percentage' => $attempt->quiz->total_points > 0 
-                        ? round(($attempt->score / $attempt->quiz->total_points) * 100, 1)
-                        : 0,
-                    'completed_at' => $attempt->ended_at,
-                    'is_best' => $this->isBestScore($attempt->user_id, $quizId, $attempt->score)
                 ];
             });
     }

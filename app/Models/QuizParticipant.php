@@ -27,4 +27,25 @@ class QuizParticipant extends Model
     {
         return $this->belongsTo(User::class);
     }
+    
+    // Helper methods
+    public function isInLobby()
+    {
+        return $this->status === 'joined';
+    }
+    
+    public function isTakingQuiz()
+    {
+        return $this->status === 'taking_quiz';
+    }
+    
+    public function hasLeft()
+    {
+        return $this->status === 'left';
+    }
+    
+    public function isRegistered()
+    {
+        return $this->status === 'registered';
+    }
 }
