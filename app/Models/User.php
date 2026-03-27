@@ -12,11 +12,7 @@ class User extends Authenticatable
     use HasApiTokens, HasFactory, Notifiable;
 
     protected $fillable = [
-        'name', 
-        'email', 
-        'password', 
-        'role', 
-        'is_active'
+        'name', 'email', 'password', 'role', 'is_active'
     ];
 
     protected $hidden = [
@@ -67,6 +63,22 @@ class User extends Authenticatable
     public function quizParticipants()
     {
         return $this->hasMany(QuizParticipant::class);
+    }
+
+    // Categories assigned to this user
+    public function assignedCategories()
+    {
+        return $this->belongsToMany(Category::class, 'category_users')
+            ->withPivot('status', 'created_at', 'updated_at')
+            ->withTimestamps();
+    }
+
+    // Quizzes assigned directly to this user
+    public function assignedQuizzes()
+    {
+        return $this->belongsToMany(Quiz::class, 'quiz_users')
+            ->withPivot('status', 'created_at', 'updated_at')
+            ->withTimestamps();
     }
 
     public function isMasterAdmin()

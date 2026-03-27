@@ -56,6 +56,53 @@
         padding: 15px;
         border-radius: 10px;
         background: #f8f9fa;
+        transition: all 0.3s;
+    }
+    .stat-box:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    }
+    .stat-number {
+        font-size: 28px;
+        font-weight: bold;
+    }
+    .improvement-badge {
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+        0% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.8; transform: scale(1.05); }
+        100% { opacity: 1; transform: scale(1); }
+    }
+    .best-score-badge {
+        background: linear-gradient(135deg, #ffd700 0%, #ffb347 100%);
+        color: #333;
+        padding: 8px 16px;
+        border-radius: 25px;
+        display: inline-block;
+        font-weight: bold;
+    }
+    .attempts-info {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 12px 20px;
+        margin-top: 15px;
+    }
+    .time-display {
+        font-family: monospace;
+        font-size: 16px;
+        font-weight: bold;
+    }
+    .question-time {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 12px;
+        background-color: #e9ecef;
+        font-family: monospace;
+    }
+    .time-exceeded {
+        background-color: #f8d7da;
+        color: #721c24;
     }
 </style>
 
@@ -83,6 +130,11 @@
                             </div>
                             <div class="mt-3">
                                 <h4>{{ $attempt->score }} / {{ $attempt->quiz->total_points }} points</h4>
+                                @if(isset($isBestScore) && $isBestScore)
+                                    <div class="best-score-badge mt-2">
+                                        <i class="fas fa-star"></i> Your Best Score!
+                                    </div>
+                                @endif
                             </div>
                         </div>
 
@@ -144,22 +196,66 @@
                         <div class="col-md-6">
                             <h5><i class="fas fa-info-circle text-primary"></i> Quiz Details</h5>
                             <table class="table table-sm table-borderless">
-                                <tr><td width="40%"><strong>Quiz Title:</strong></td><td>{{ $attempt->quiz->title }}</td></tr>
-                                <tr><td><strong>Category:</strong></td><td>{{ $attempt->quiz->category->name }}</td></tr>
-                                <tr><td><strong>Started:</strong></td><td>{{ $attempt->started_at->format('M d, Y h:i A') }}</td></tr>
-                                <tr><td><strong>Completed:</strong></td><td>{{ $attempt->ended_at->format('M d, Y h:i A') }}</td></tr>
-                                <tr><td><strong>Time Taken:</strong></td><td>{{ gmdate("i:s", $performanceMetrics['time_taken']) }}</td></tr>
-                                <tr><td><strong>Avg Time/Question:</strong></td><td>{{ $performanceMetrics['time_per_question'] }} seconds</td></tr>
+                                <tr>
+                                    <td width="40%"><strong>Quiz Title:</strong></td>
+                                    <td><strong>{{ $attempt->quiz->title }}</strong></td>
+                                </tr>
+                                <tr>
+                                    <td width="40%"><strong>Category:</strong></td>
+                                    <td>{{ $attempt->quiz->category->name }}</td>
+                                </tr>
+                                <tr>
+                                    <td width="40%"><strong>Started:</strong></td>
+                                    <td>{{ $attempt->started_at->format('M d, Y h:i A') }}</td>
+                                </tr>
+                                <tr>
+                                    <td width="40%"><strong>Completed:</strong></td>
+                                    <td>{{ $attempt->ended_at->format('M d, Y h:i A') }}</td>
+                                </tr>
+                                <tr>
+                                    <td width="40%"><strong>Time Taken:</strong></td>
+                                    <td>
+                                        @php
+                                            $totalSeconds = abs($performanceMetrics['time_taken']);
+                                            $minutes = floor($totalSeconds / 60);
+                                            $seconds = $totalSeconds % 60;
+                                            $timeDisplay = $minutes > 0 ? "{$minutes} min {$seconds} sec" : "{$seconds} sec";
+                                        @endphp
+                                        <span class="time-display text-primary">{{ $timeDisplay }}</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td width="40%"><strong>Avg Time/Question:</strong></td>
+                                    <td>
+                                        @php
+                                            $avgSeconds = abs($performanceMetrics['time_per_question']);
+                                            $avgMinutes = floor($avgSeconds / 60);
+                                            $avgSecs = $avgSeconds % 60;
+                                            $avgDisplay = $avgMinutes > 0 ? "{$avgMinutes} min {$avgSecs} sec" : "{$avgSecs} sec";
+                                        @endphp
+                                        {{ $avgDisplay }}
+                                    </td>
+                                </tr>
                             </table>
                         </div>
                         
                         <div class="col-md-6">
                             <h5><i class="fas fa-chart-line text-primary"></i> Performance Summary</h5>
                             <table class="table table-sm table-borderless">
-                                <tr><td width="40%"><strong>Total Questions:</strong></td><td>{{ $attempt->total_questions }}</td></tr>
-                                <tr><td><strong>Correct Answers:</strong></td><td class="text-success">{{ $attempt->correct_answers }}</td></tr>
-                                <tr><td><strong>Incorrect Answers:</strong></td><td class="text-danger">{{ $attempt->incorrect_answers }}</td></tr>
-                                <tr><td><strong>Accuracy:</strong></td>
+                                <tr>
+                                    <td width="40%"><strong>Total Questions:</strong></td>
+                                    <td>{{ $attempt->total_questions }}</td>
+                                </tr>
+                                <tr>
+                                    <td width="40%"><strong>Correct Answers:</strong></td>
+                                    <td class="text-success"><strong>{{ $attempt->correct_answers }}</strong></td>
+                                </tr>
+                                <tr>
+                                    <td width="40%"><strong>Incorrect Answers:</strong></td>
+                                    <td class="text-danger"><strong>{{ $attempt->incorrect_answers }}</strong></td>
+                                </tr>
+                                <tr>
+                                    <td width="40%"><strong>Accuracy:</strong></td>
                                     <td>
                                         <div class="progress" style="height: 20px;">
                                             <div class="progress-bar {{ $performanceMetrics['accuracy'] >= 60 ? 'bg-success' : 'bg-warning' }}" 
@@ -169,11 +265,52 @@
                                         </div>
                                     </td>
                                 </tr>
-                                <tr><td><strong>Passing Score:</strong></td><td>{{ $attempt->quiz->passing_score }}%</td></tr>
-                                <tr><td><strong>Your Score:</strong></td><td><strong class="text-primary">{{ $percentage }}%</strong></td></tr>
+                                <tr>
+                                    <td width="40%"><strong>Passing Score:</strong></td>
+                                    <td>{{ $attempt->quiz->passing_score }}%</td>
+                                </tr>
+                                <tr>
+                                    <td width="40%"><strong>Your Score:</strong></td>
+                                    <td><strong class="text-primary">{{ $percentage }}%</strong></td>
+                                </tr>
                             </table>
                         </div>
                     </div>
+
+                    <!-- Attempts Info Section (Simple) -->
+                    <div class="attempts-info text-center">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <i class="fas fa-redo text-primary"></i>
+                                <strong>Attempt #{{ $attemptNumber ?? 1 }}</strong>
+                                @if(isset($totalAttempts) && $totalAttempts > 1)
+                                    <br><small class="text-muted">({{ $totalAttempts }} total attempts)</small>
+                                @endif
+                            </div>
+                            <div class="col-md-6">
+                                <i class="fas fa-chart-line text-success"></i>
+                                <strong>Best Score: {{ $bestScoreInfo['score'] ?? $attempt->score }} points</strong>
+                                @if(isset($bestScoreInfo) && $bestScoreInfo && $bestScoreInfo['score'] != $attempt->score)
+                                    <br><small class="text-muted">({{ $bestScoreInfo['percentage'] }}%)</small>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Remaining Attempts Info -->
+                    @if(isset($remainingAttempts) && $remainingAttempts > 0)
+                        <div class="alert alert-info text-center mt-3">
+                            <i class="fas fa-info-circle"></i>
+                            You have <strong>{{ $remainingAttempts }}</strong> attempt(s) remaining. 
+                            Only your best score will be shown on the leaderboard.
+                        </div>
+                    @elseif(isset($remainingAttempts) && $remainingAttempts == 0 && isset($totalAttempts) && $totalAttempts > 0)
+                        <div class="alert alert-warning text-center mt-3">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            You have used all {{ $attempt->quiz->max_attempts }} attempts for this quiz.
+                            Your best score: <strong>{{ $bestScoreInfo['score'] ?? $attempt->score }} points ({{ $bestScoreInfo['percentage'] ?? $percentage }}%)</strong>
+                        </div>
+                    @endif
                 </div>
             </div>
 
@@ -181,7 +318,7 @@
             @if($topLeaderboard->count() > 0)
                 <div class="card mb-4">
                     <div class="card-header bg-info text-white">
-                        <h5 class="mb-0"><i class="fas fa-trophy"></i> Top 10 Leaderboard</h5>
+                        <h5 class="mb-0"><i class="fas fa-trophy"></i> Top 3 Leaderboard</h5>
                     </div>
                     <div class="card-body p-0">
                         <div class="list-group list-group-flush">
@@ -219,88 +356,20 @@
                 </div>
             @endif
 
-            <!-- Question-wise Analysis -->
-            @if($result->question_wise_analysis)
-                <div class="card mb-4">
-                    <div class="card-header bg-secondary text-white">
-                        <h5 class="mb-0"><i class="fas fa-list"></i> Question-wise Analysis</h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="accordion" id="questionAccordion">
-                            @foreach($result->question_wise_analysis as $index => $analysis)
-                                @php
-                                    $isCorrect = $analysis['is_correct'] ?? false;
-                                    $showAnswer = $analysis['show_answer'] ?? true;
-                                @endphp
-                                <div class="accordion-item">
-                                    <h2 class="accordion-header">
-                                        <button class="accordion-button {{ $index > 0 ? 'collapsed' : '' }}" type="button" 
-                                                data-bs-toggle="collapse" data-bs-target="#collapse{{ $index }}">
-                                            <div class="d-flex justify-content-between w-100 me-3">
-                                                <span>
-                                                    @if($isCorrect)
-                                                        <i class="fas fa-check-circle text-success"></i>
-                                                    @else
-                                                        <i class="fas fa-times-circle text-danger"></i>
-                                                    @endif
-                                                    <strong>Question {{ $index + 1 }}:</strong> {{ Str::limit($analysis['question_text'], 80) }}
-                                                </span>
-                                                <span class="badge {{ $isCorrect ? 'bg-success' : 'bg-danger' }}">
-                                                    {{ $analysis['points_earned'] }}/{{ $analysis['total_points'] ?? 0 }} pts
-                                                </span>
-                                            </div>
-                                        </button>
-                                    </h2>
-                                    <div id="collapse{{ $index }}" class="accordion-collapse collapse {{ $index == 0 ? 'show' : '' }}" 
-                                         data-bs-parent="#questionAccordion">
-                                        <div class="accordion-body">
-                                            <p><strong>Question:</strong> {{ $analysis['question_text'] }}</p>
-                                            <p><strong>Your Answer:</strong> 
-                                                @if(isset($analysis['selected_option_text']))
-                                                    {{ $analysis['selected_option_text'] }}
-                                                @else
-                                                    <span class="text-warning">Not answered</span>
-                                                @endif
-                                            </p>
-                                            @if($showAnswer && !$isCorrect && isset($analysis['correct_answer_text']))
-                                                <p class="text-success"><strong>Correct Answer:</strong> {{ $analysis['correct_answer_text'] }}</p>
-                                            @endif
-                                            @if(isset($analysis['time_taken']) && $analysis['time_taken'])
-                                                <p><strong>Time Taken:</strong> {{ $analysis['time_taken'] }} seconds</p>
-                                            @endif
-                                            @if(isset($analysis['explanation']) && $analysis['explanation'])
-                                                <div class="alert alert-info mt-2">
-                                                    <i class="fas fa-info-circle"></i> 
-                                                    <strong>Explanation:</strong> {{ $analysis['explanation'] }}
-                                                </div>
-                                            @endif
-                                        </div>
-                                    </div>
-                                </div>
-                            @endforeach
-                        </div>
-                    </div>
-                </div>
-            @endif
-
             <!-- Action Buttons -->
             <div class="text-center mb-5">
                 <div class="d-flex justify-content-center gap-3 flex-wrap">
-                    @if($result->passed)
-                        <a href="{{ route('user.certificate', $attempt) }}" class="btn btn-success btn-lg">
-                            <i class="fas fa-certificate"></i> Download Certificate
-                        </a>
-                    @endif
+
                     
                     @if(isset($remainingAttempts) && $remainingAttempts > 0)
-                        <a href="{{ route('user.quiz.start', $attempt->quiz) }}" class="btn btn-warning btn-lg">
+                        <a href="{{ route('user.quiz.lobby', $attempt->quiz) }}" class="btn btn-warning btn-lg">
                             <i class="fas fa-redo"></i> Retake Quiz ({{ $remainingAttempts }} attempts left)
                         </a>
                     @endif
                     
-                    <button class="btn btn-info btn-lg" onclick="shareResult()">
+                    <!-- <button class="btn btn-info btn-lg" onclick="shareResult()">
                         <i class="fas fa-share-alt"></i> Share Result
-                    </button>
+                    </button> -->
                     
                     <a href="{{ route('user.dashboard') }}" class="btn btn-primary btn-lg">
                         <i class="fas fa-home"></i> Go to Dashboard

@@ -20,7 +20,6 @@ use App\Http\Controllers\Admin\ResultController as AdminResultController;
 use App\Http\Controllers\MasterAdmin\AdminManagementController;
 use App\Http\Controllers\MasterAdmin\SystemSettingsController;
 
-
 // ==================== PUBLIC ROUTES ====================
 Route::get('/', function () {
     return view('welcome');
@@ -51,28 +50,21 @@ Route::middleware(['auth', 'role:user'])->prefix('user')->name('user.')->group(f
     Route::get('results', [ResultController::class, 'history'])->name('results');
     Route::get('certificate/{attempt}', [ResultController::class, 'certificate'])->name('certificate');
     
-    // Quiz routes
     Route::prefix('quiz')->name('quiz.')->group(function () {
-        // Lobby routes
         Route::get('lobby/{quiz}', [QuizLobbyController::class, 'index'])->name('lobby');
         Route::post('lobby/{quiz}/join', [QuizLobbyController::class, 'join'])->name('join');
         Route::post('lobby/{quiz}/leave', [QuizLobbyController::class, 'leave'])->name('leave');
         Route::get('lobby/{quiz}/participants', [QuizLobbyController::class, 'participants'])->name('participants');
         Route::post('lobby/{quiz}/heartbeat', [QuizLobbyController::class, 'heartbeat'])->name('heartbeat');
         
-        // Attempt routes
         Route::get('start/{quiz}', [QuizAttemptController::class, 'start'])->name('start');
         Route::get('attempt/{quiz}/{attempt}', [QuizAttemptController::class, 'attempt'])->name('attempt');
         Route::post('attempt/{quiz}/{attempt}/submit', [QuizAttemptController::class, 'submitAnswer'])->name('submit');
         Route::post('attempt/{quiz}/{attempt}/submit-multiple', [QuizAttemptController::class, 'submitMultipleAnswer'])->name('submit-multiple');
         Route::post('attempt/{quiz}/{attempt}/finish', [QuizAttemptController::class, 'finish'])->name('finish');
         
-        // Result routes
         Route::get('result/{quiz}/{attempt}', [ResultController::class, 'show'])->name('result');
         Route::get('attempts/{quiz}', [QuizAttemptController::class, 'attempts'])->name('attempts');
-
-        // Quiz details for AJAX
-        Route::get('results/quiz/{quiz}/details', [App\Http\Controllers\Admin\ResultController::class, 'getQuizDetails'])->name('results.quiz.details');
     });
 });
 
@@ -83,6 +75,10 @@ Route::middleware(['auth', 'role:admin,master_admin'])->prefix('admin')->name('a
     
     // Categories
     Route::resource('categories', CategoryController::class);
+    
+    // Category User Assignment Routes
+    Route::get('categories/{category}/assign-users', [CategoryController::class, 'assignUsers'])->name('categories.assign-users');
+    Route::post('categories/{category}/assign-user', [CategoryController::class, 'assignUser'])->name('categories.assign-user');
     
     // Quizzes
     Route::resource('quizzes', AdminQuizController::class);
@@ -115,7 +111,7 @@ Route::middleware(['auth', 'role:admin,master_admin'])->prefix('admin')->name('a
         Route::get('export-activity', [ReportController::class, 'exportUserActivity'])->name('export-activity');
     });
     
-    // Results - ADD THIS INSIDE ADMIN GROUP
+    // Results (if controller exists)
     Route::prefix('results')->name('results.')->group(function () {
         Route::get('/', [AdminResultController::class, 'index'])->name('index');
         Route::get('{attempt}', [AdminResultController::class, 'show'])->name('show');
@@ -150,6 +146,9 @@ Route::middleware(['auth', 'role:master_admin'])->prefix('master-admin')->name('
         Route::post('logs/clear', [SystemSettingsController::class, 'clearLogs'])->name('logs.clear');
         Route::get('info', [SystemSettingsController::class, 'info'])->name('info');
     });
+    
+    // Activities AJAX endpoint for auto-refresh
+    Route::get('activities/latest', [AdminManagementController::class, 'getLatestActivities'])->name('activities.latest');
 });
 
 // ==================== ERROR ROUTES ====================
@@ -157,6 +156,7 @@ Route::get('unauthorized', function () {
     return view('errors.403');
 })->name('unauthorized');
 
+// Fallback route for 404 errors
 Route::fallback(function () {
     return view('errors.404');
 });

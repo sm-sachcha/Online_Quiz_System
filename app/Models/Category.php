@@ -11,13 +11,7 @@ class Category extends Model
     use HasFactory;
 
     protected $fillable = [
-        'name', 
-        'slug', 
-        'description', 
-        'icon', 
-        'color', 
-        'is_active', 
-        'created_by'
+        'name', 'slug', 'description', 'icon', 'color', 'is_active', 'created_by'
     ];
 
     protected $casts = [
@@ -40,5 +34,13 @@ class Category extends Model
     public function quizzes()
     {
         return $this->hasMany(Quiz::class);
+    }
+    
+    // Users assigned to this category
+    public function assignedUsers()
+    {
+        return $this->belongsToMany(User::class, 'category_users')
+            ->withPivot('status', 'created_at', 'updated_at')
+            ->withTimestamps();
     }
 }

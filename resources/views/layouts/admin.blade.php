@@ -105,36 +105,50 @@
             </div>
 
             <ul class="list-unstyled components">
-                <li class="{{ request()->routeIs('admin.dashboard') ? 'active' : '' }}">
-                    <a href="{{ route('admin.dashboard') }}">
-                        <i class="fas fa-tachometer-alt"></i> Dashboard
-                    </a>
-                </li>
+                <!-- DYNAMIC DASHBOARD LINK BASED ON USER ROLE -->
+                @if(Auth::user()->isMasterAdmin())
+                    <li class="{{ request()->routeIs('master-admin.dashboard') ? 'active' : '' }}">
+                        <a href="{{ route('master-admin.dashboard') }}">
+                            <i class="fas fa-tachometer-alt"></i> Dashboard
+                        </a>
+                    </li>
+                @else
+                    <li class="{{ request()->routeIs('admin.dashboard') ? 'active' : '' }}">
+                        <a href="{{ route('admin.dashboard') }}">
+                            <i class="fas fa-tachometer-alt"></i> Dashboard
+                        </a>
+                    </li>
+                @endif
                 
+                <!-- Categories - Available to both Admin and Master Admin -->
                 <li class="{{ request()->routeIs('admin.categories.*') ? 'active' : '' }}">
                     <a href="{{ route('admin.categories.index') }}">
                         <i class="fas fa-tags"></i> Categories
                     </a>
                 </li>
                 
+                <!-- Quizzes - Available to both Admin and Master Admin -->
                 <li class="{{ request()->routeIs('admin.quizzes.*') ? 'active' : '' }}">
                     <a href="{{ route('admin.quizzes.index') }}">
                         <i class="fas fa-question-circle"></i> Quizzes
                     </a>
                 </li>
 
+                <!-- Results - Available to both Admin and Master Admin -->
                 <li class="{{ request()->routeIs('admin.results.*') ? 'active' : '' }}">
                     <a href="{{ route('admin.results.index') }}">
                         <i class="fas fa-chart-line"></i> Results
                     </a>
                 </li>
                 
+                <!-- Users - Available to both Admin and Master Admin -->
                 <li class="{{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
                     <a href="{{ route('admin.users.index') }}">
                         <i class="fas fa-users"></i> Users
                     </a>
                 </li>
                 
+                <!-- Reports - Available to both Admin and Master Admin -->
                 <li>
                     <a href="#reportsSubmenu" data-bs-toggle="collapse" aria-expanded="false">
                         <i class="fas fa-chart-bar"></i> Reports <i class="fas fa-chevron-down float-end"></i>
@@ -145,6 +159,24 @@
                         <li><a href="{{ route('admin.reports.system-overview') }}">System Overview</a></li>
                     </ul>
                 </li>
+
+                <!-- Master Admin Only Section -->
+                @if(Auth::user()->isMasterAdmin())
+                    <li class="mt-3">
+                        <hr class="bg-light">
+                        <small class="text-muted ms-3">MASTER ADMIN</small>
+                    </li>
+                    <li class="{{ request()->routeIs('master-admin.admins.*') ? 'active' : '' }}">
+                        <a href="{{ route('master-admin.admins.index') }}">
+                            <i class="fas fa-user-tie"></i> Manage Admins
+                        </a>
+                    </li>
+                    <li class="{{ request()->routeIs('master-admin.settings.*') ? 'active' : '' }}">
+                        <a href="{{ route('master-admin.settings.index') }}">
+                            <i class="fas fa-cog"></i> System Settings
+                        </a>
+                    </li>
+                @endif
             </ul>
         </nav>
 
@@ -165,14 +197,20 @@
                                 <li><a class="dropdown-item" href="{{ route('profile.show') }}">
                                     <i class="fas fa-user"></i> Profile
                                 </a></li>
-                                <li><a class="dropdown-item" href="{{ route('admin.dashboard') }}">
-                                    <i class="fas fa-home"></i> Admin Dashboard
-                                </a></li>
+                                
                                 @if(Auth::user()->isMasterAdmin())
                                     <li><a class="dropdown-item" href="{{ route('master-admin.dashboard') }}">
-                                        <i class="fas fa-crown"></i> Master Admin
+                                        <i class="fas fa-crown"></i> Master Admin Dashboard
+                                    </a></li>
+                                    <li><a class="dropdown-item" href="{{ route('admin.dashboard') }}">
+                                        <i class="fas fa-chart-line"></i> General Admin Panel
+                                    </a></li>
+                                @else
+                                    <li><a class="dropdown-item" href="{{ route('admin.dashboard') }}">
+                                        <i class="fas fa-home"></i> Admin Dashboard
                                     </a></li>
                                 @endif
+                                
                                 <li><hr class="dropdown-divider"></li>
                                 <li>
                                     <form method="POST" action="{{ route('logout') }}">

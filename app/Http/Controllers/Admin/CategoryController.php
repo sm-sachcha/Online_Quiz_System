@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Category;
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -14,8 +15,6 @@ class CategoryController extends Controller
     {
         $user = Auth::user();
         
-        // If Master Admin - see all categories
-        // If General Admin - see only categories they created
         if ($user->isMasterAdmin()) {
             $categories = Category::with('creator')
                 ->withCount('quizzes')
@@ -63,7 +62,6 @@ class CategoryController extends Controller
 
     public function edit(Category $category)
     {
-        // Check if user owns this category or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to edit this category.');
         }
@@ -73,7 +71,6 @@ class CategoryController extends Controller
 
     public function update(Request $request, Category $category)
     {
-        // Check if user owns this category or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to update this category.');
         }
@@ -101,7 +98,6 @@ class CategoryController extends Controller
 
     public function destroy(Category $category)
     {
-        // Check if user owns this category or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to delete this category.');
         }
@@ -114,5 +110,71 @@ class CategoryController extends Controller
 
         return redirect()->route('admin.categories.index')
             ->with('success', 'Category deleted successfully.');
+    }
+
+    /**
+     * Show assign users page for category
+     */
+    public function assignUsers(Category $category)
+    {
+        if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
+            abort(403, 'You do not have permission to assign users to this category.');
+        }
+        
+        $users = User::where('role', 'user')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+        
+        $assignedUsers = $category->assignedUsers;
+        
+        return view('admin.categories.assign-users', compact('category', 'users', 'assignedUsers'));
+    }
+
+    /**
+     * Assign or remove user from category
+     */
+    public function assignUser(Request $request, Category $category)
+    {
+        if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
+            return response()->json(['success' => false, 'message' => 'Permission denied'], 403);
+        }
+        
+        $request->validate([
+            'user_id' => 'required|exists:users,id',
+            'action' => 'required|in:assign,remove'
+        ]);
+        
+        $user = User::find($request->user_id);
+        
+        if ($request->action == 'assign') {
+            // Check if already assigned
+            if ($category->assignedUsers()->where('user_id', $user->id)->exists()) {
+                return response()->json(['success' => false, 'message' => 'User already assigned to this category']);
+            }
+            
+            $category->assignedUsers()->attach($user->id, [
+                'status' => 'active',
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+            
+            return response()->json([
+                'success' => true, 
+                'message' => 'User assigned successfully',
+                'user_name' => $user->name
+            ]);
+            
+        } else if ($request->action == 'remove') {
+            $category->assignedUsers()->detach($user->id);
+            
+            return response()->json([
+                'success' => true, 
+                'message' => 'User removed successfully',
+                'user_name' => $user->name
+            ]);
+        }
+        
+        return response()->json(['success' => false, 'message' => 'Invalid action'], 400);
     }
 }

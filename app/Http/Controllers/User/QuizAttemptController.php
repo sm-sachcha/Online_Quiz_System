@@ -111,4 +111,6 @@ class QuizAttemptController extends Controller
         
         return view('user.quiz.attempts', compact('quiz', 'attempts', 'remainingAttempts'));
     }
+
+
 }

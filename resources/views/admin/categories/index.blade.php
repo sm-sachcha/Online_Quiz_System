@@ -38,7 +38,7 @@
                             </thead>
                             <tbody>
                                 @foreach($categories as $category)
-                                     <tr>
+                                    <tr>
                                         <td>{{ $category->id }}</td>
                                         <td>
                                             @if($category->icon)
@@ -60,24 +60,33 @@
                                         <td>{{ $category->creator->name }}</td>
                                         <td>{{ $category->created_at->format('M d, Y') }}</td>
                                         <td>
-                                            <a href="{{ route('admin.categories.edit', $category) }}" 
-                                               class="btn btn-sm btn-info">
-                                                <i class="fas fa-edit"></i>
-                                            </a>
-                                            <form action="{{ route('admin.categories.destroy', $category) }}" 
-                                                  method="POST" class="d-inline delete-category-form">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="button" 
-                                                        class="btn btn-sm btn-danger delete-category-btn" 
-                                                        data-category-name="{{ $category->name }}"
-                                                        data-category-id="{{ $category->id }}"
-                                                        title="Delete Category">
-                                                    <i class="fas fa-trash"></i>
-                                                </button>
-                                            </form>
+                                            <div class="btn-group" role="group">
+                                                <!-- Assign Users Button -->
+                                                <a href="{{ route('admin.categories.assign-users', $category) }}" 
+                                                   class="btn btn-sm btn-info" title="Assign Users">
+                                                    <i class="fas fa-users"></i>
+                                                </a>
+                                                <!-- Edit Button -->
+                                                <a href="{{ route('admin.categories.edit', $category) }}" 
+                                                   class="btn btn-sm btn-primary" title="Edit Category">
+                                                    <i class="fas fa-edit"></i>
+                                                </a>
+                                                <!-- Delete Button -->
+                                                <form action="{{ route('admin.categories.destroy', $category) }}" 
+                                                      method="POST" class="d-inline delete-category-form">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="button" 
+                                                            class="btn btn-sm btn-danger delete-category-btn" 
+                                                            data-category-name="{{ $category->name }}"
+                                                            data-category-id="{{ $category->id }}"
+                                                            title="Delete Category">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </form>
+                                            </div>
                                         </td>
-                                     </tr>
+                                    </tr>
                                 @endforeach
                             </tbody>
                         </table>
@@ -162,7 +171,11 @@
             info: false,
             columnDefs: [
                 { orderable: false, targets: [1, 8] }
-            ]
+            ],
+            language: {
+                search: "Search categories:",
+                emptyTable: "No categories found"
+            }
         });
     });
 </script>

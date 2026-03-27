@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Cache;
 
 class SystemSettingsController extends Controller
 {
@@ -19,7 +20,10 @@ class SystemSettingsController extends Controller
             'timezone' => config('app.timezone'),
         ];
 
-        return view('master-admin.settings.index', compact('settings'));
+        // Get all available timezones
+        $timezones = timezone_identifiers_list();
+
+        return view('master-admin.settings.index', compact('settings', 'timezones'));
     }
 
     public function update(Request $request)
@@ -27,18 +31,38 @@ class SystemSettingsController extends Controller
         $request->validate([
             'app_name' => 'required|string|max:255',
             'app_url' => 'required|url',
-            'timezone' => 'required|string|timezone',
+            'timezone' => 'required|string',
         ]);
 
-        $this->updateEnvironmentFile([
-            'APP_NAME' => '"' . $request->app_name . '"',
-            'APP_URL' => $request->app_url,
-            'APP_TIMEZONE' => $request->timezone,
-        ]);
+        try {
+            // Update .env file
+            $this->updateEnvironmentFile([
+                'APP_NAME' => '"' . $request->app_name . '"',
+                'APP_URL' => $request->app_url,
+                'APP_TIMEZONE' => $request->timezone,
+            ]);
 
-        Artisan::call('config:clear');
+            // Clear all caches to apply changes
+            Artisan::call('config:clear');
+            Artisan::call('cache:clear');
+            Artisan::call('view:clear');
+            Artisan::call('route:clear');
 
-        return back()->with('success', 'System settings updated successfully.');
+            // Update config values in memory
+            config(['app.name' => $request->app_name]);
+            config(['app.url' => $request->app_url]);
+            config(['app.timezone' => $request->timezone]);
+
+            // Set PHP default timezone
+            date_default_timezone_set($request->timezone);
+
+            $message = "System settings updated successfully!<br>Timezone changed to: <strong>" . $request->timezone . "</strong>";
+
+            return back()->with('success', $message);
+
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to update settings: ' . $e->getMessage());
+        }
     }
 
     public function maintenance()
@@ -119,6 +143,8 @@ class SystemSettingsController extends Controller
 
     public function info()
     {
+        $timezone = config('app.timezone');
+        
         $info = [
             'php_version' => phpversion(),
             'laravel_version' => app()->version(),
@@ -128,6 +154,12 @@ class SystemSettingsController extends Controller
             'server_os' => PHP_OS,
             'memory_limit' => ini_get('memory_limit'),
             'max_execution_time' => ini_get('max_execution_time'),
+            'upload_max_filesize' => ini_get('upload_max_filesize'),
+            'post_max_size' => ini_get('post_max_size'),
+            'timezone' => $timezone,
+            'php_timezone' => date_default_timezone_get(),
+            'current_time' => now()->format('Y-m-d H:i:s'),
+            'current_time_utc' => now()->utc()->format('Y-m-d H:i:s'),
         ];
 
         return view('master-admin.settings.info', compact('info'));
@@ -138,15 +170,15 @@ class SystemSettingsController extends Controller
         $envFile = base_path('.env');
         
         foreach ($data as $key => $value) {
-            if (strpos(file_get_contents($envFile), $key) !== false) {
-                file_put_contents($envFile, preg_replace(
-                    '/^' . $key . '=.*/m',
-                    $key . '=' . $value,
-                    file_get_contents($envFile)
-                ));
+            $content = file_get_contents($envFile);
+            
+            if (preg_match("/^{$key}=.*/m", $content)) {
+                $content = preg_replace("/^{$key}=.*/m", "{$key}={$value}", $content);
             } else {
-                file_put_contents($envFile, PHP_EOL . $key . '=' . $value, FILE_APPEND);
+                $content .= PHP_EOL . "{$key}={$value}";
             }
+            
+            file_put_contents($envFile, $content);
         }
     }
 }
