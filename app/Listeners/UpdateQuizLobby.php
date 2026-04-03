@@ -8,6 +8,7 @@ use App\Events\QuizLobbyUpdated;
 use App\Models\QuizParticipant;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Support\Facades\Log;
 
 class UpdateQuizLobby implements ShouldQueue
 {
@@ -15,31 +16,44 @@ class UpdateQuizLobby implements ShouldQueue
 
     public function handleParticipantJoined(ParticipantJoined $event): void
     {
-        $this->broadcastLobbyUpdate($event->quiz);
+        try {
+            $this->broadcastLobbyUpdate($event->quiz);
+        } catch (\Exception $e) {
+            Log::error('UpdateQuizLobby (join) failed: ' . $e->getMessage());
+        }
     }
 
     public function handleParticipantLeft(ParticipantLeft $event): void
     {
-        $this->broadcastLobbyUpdate($event->quiz);
+        try {
+            $this->broadcastLobbyUpdate($event->quiz);
+        } catch (\Exception $e) {
+            Log::error('UpdateQuizLobby (left) failed: ' . $e->getMessage());
+        }
     }
 
     private function broadcastLobbyUpdate($quiz)
     {
-        $participants = QuizParticipant::with('user')
-            ->where('quiz_id', $quiz->id)
-            ->where('status', 'joined')
-            ->get()
-            ->map(function ($participant) {
-                return [
-                    'id' => $participant->user->id,
-                    'name' => $participant->user->name,
-                    'joined_at' => $participant->joined_at
-                ];
-            });
+        try {
+            $participants = QuizParticipant::with('user')
+                ->where('quiz_id', $quiz->id)
+                ->where('status', 'joined')
+                ->get()
+                ->map(function ($participant) {
+                    return [
+                        'id' => $participant->user->id ?? $participant->id,
+                        'name' => $participant->user->name ?? 'Guest',
+                        'joined_at' => $participant->joined_at
+                    ];
+                });
 
-        $totalParticipants = $participants->count();
-
-        broadcast(new QuizLobbyUpdated($quiz, $participants, $totalParticipants));
+            $totalParticipants = $participants->count();
+            
+            broadcast(new QuizLobbyUpdated($quiz, $participants, $totalParticipants));
+            Log::info('Lobby updated for quiz: ' . $quiz->id . ' - ' . $totalParticipants . ' participants');
+        } catch (\Exception $e) {
+            Log::error('broadcastLobbyUpdate failed: ' . $e->getMessage());
+        }
     }
 
     public function subscribe($events)

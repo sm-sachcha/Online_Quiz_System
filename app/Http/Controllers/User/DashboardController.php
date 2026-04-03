@@ -18,10 +18,14 @@ class DashboardController extends Controller
         $user = Auth::user();
         
         // Get categories assigned to this user
-        $assignedCategoryIds = $user->assignedCategories()->pluck('category_id')->toArray();
+        // Fix: Use correct pivot table name 'category_user' and get category IDs
+        $assignedCategoryIds = $user->assignedCategories()->pluck('categories.id')->toArray();
         
-        // Get quizzes assigned directly to this user
-        $assignedQuizIds = $user->assignedQuizzes()->pluck('quiz_id')->toArray();
+        // Get quizzes assigned directly to this user (if you have this relationship)
+        $assignedQuizIds = [];
+        if (method_exists($user, 'assignedQuizzes')) {
+            $assignedQuizIds = $user->assignedQuizzes()->pluck('quizzes.id')->toArray();
+        }
         
         // Log for debugging
         Log::info('User assigned categories', [
@@ -31,7 +35,7 @@ class DashboardController extends Controller
             'assigned_quiz_ids' => $assignedQuizIds
         ]);
         
-        // Build query for ALL published quizzes (without date filtering first)
+        // Build query for quizzes
         $quizQuery = Quiz::where('is_published', true);
         
         // Apply access restrictions for non-admin users

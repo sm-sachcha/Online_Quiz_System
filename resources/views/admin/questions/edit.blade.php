@@ -21,6 +21,7 @@
         padding: 6px 12px;
         border-radius: 4px;
         cursor: pointer;
+        transition: all 0.3s;
     }
     .btn-correct-selected {
         background-color: #28a745 !important;
@@ -33,6 +34,31 @@
         width: 32px;
         height: 32px;
         cursor: pointer;
+        transition: all 0.3s;
+    }
+    .remove-option-btn:hover {
+        background-color: #c82333;
+        transform: scale(1.05);
+    }
+    .btn-set-correct:hover {
+        transform: scale(1.05);
+    }
+    .question-type-badge {
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-weight: bold;
+    }
+    .badge-multiple {
+        background-color: #17a2b8;
+        color: white;
+    }
+    .badge-single {
+        background-color: #ffc107;
+        color: #856404;
+    }
+    .badge-truefalse {
+        background-color: #6c757d;
+        color: white;
     }
 </style>
 
@@ -59,7 +85,26 @@
                     <div class="row">
                         <div class="col-md-4 mb-3">
                             <label class="form-label">Question Type</label>
-                            <input type="text" class="form-control" value="{{ ucfirst(str_replace('_', ' ', $question->question_type)) }}" readonly>
+                            <div>
+                                @php
+                                    $typeClass = '';
+                                    $typeLabel = '';
+                                    if($question->question_type == 'multiple_choice') {
+                                        $typeClass = 'badge-multiple';
+                                        $typeLabel = 'Multiple Choice (Select all that apply)';
+                                    } elseif($question->question_type == 'single_choice') {
+                                        $typeClass = 'badge-single';
+                                        $typeLabel = 'Single Choice (Select only one)';
+                                    } else {
+                                        $typeClass = 'badge-truefalse';
+                                        $typeLabel = 'True / False';
+                                    }
+                                @endphp
+                                <span class="question-type-badge {{ $typeClass }}">
+                                    <i class="fas {{ $question->question_type == 'multiple_choice' ? 'fa-check-double' : ($question->question_type == 'single_choice' ? 'fa-dot-circle' : 'fa-adjust') }}"></i>
+                                    {{ $typeLabel }}
+                                </span>
+                            </div>
                         </div>
 
                         <div class="col-md-4 mb-3">
@@ -83,9 +128,19 @@
 
                     <div class="mb-3">
                         <label class="form-label">Answer Options</label>
+                        <div class="alert alert-info mb-2 small">
+                            @if($question->question_type == 'multiple_choice')
+                                <i class="fas fa-info-circle"></i> <strong>Multiple Choice:</strong> You can select MULTIPLE correct answers by clicking "Set Correct" on all correct options.
+                            @elseif($question->question_type == 'single_choice')
+                                <i class="fas fa-info-circle"></i> <strong>Single Choice:</strong> Only ONE option can be marked as correct. Selecting a new correct option will automatically unselect the previous one.
+                            @else
+                                <i class="fas fa-info-circle"></i> <strong>True/False:</strong> Only ONE option (True or False) can be marked as correct.
+                            @endif
+                        </div>
+                        
                         <div id="options-list">
                             @foreach($question->options as $index => $option)
-                                <div class="option-card card mb-2 {{ $option->is_correct ? 'correct-option' : '' }}">
+                                <div class="option-card card mb-2 {{ $option->is_correct ? 'correct-option' : '' }}" data-option-id="{{ $option->id }}">
                                     <div class="card-body">
                                         <div class="row align-items-center">
                                             <div class="col-auto">
@@ -98,12 +153,13 @@
                                             </div>
                                             <div class="col-auto">
                                                 <button type="button" class="btn btn-sm set-correct-btn {{ $option->is_correct ? 'btn-correct-selected' : 'btn-secondary' }}" 
-                                                        data-option-index="{{ $index }}">
+                                                        data-option-index="{{ $index }}"
+                                                        data-question-type="{{ $question->question_type }}">
                                                     {{ $option->is_correct ? '✓ Correct' : 'Set Correct' }}
                                                 </button>
                                             </div>
                                             <div class="col-auto">
-                                                <button type="button" class="remove-option-btn">✕</button>
+                                                <button type="button" class="remove-option-btn" title="Remove option">✕</button>
                                             </div>
                                         </div>
                                         <input type="hidden" name="options[{{ $index }}][id]" value="{{ $option->id }}">
@@ -163,8 +219,18 @@
 @push('scripts')
 <script>
     let optionCounter = {{ $question->options->count() }};
+    const questionType = '{{ $question->question_type }}';
+    const isMultipleChoice = questionType === 'multiple_choice';
+    const isSingleChoice = questionType === 'single_choice';
+    const isTrueFalse = questionType === 'true_false';
     
     function addOption(optionText = '', isCorrect = false) {
+        // For True/False, don't allow adding more options
+        if (isTrueFalse && document.querySelectorAll('.option-card').length >= 2) {
+            alert('True/False questions can only have 2 options (True and False)');
+            return;
+        }
+        
         optionCounter++;
         const optionDiv = document.createElement('div');
         optionDiv.className = 'option-card card mb-2';
@@ -181,12 +247,14 @@
                                placeholder="Enter option text" required>
                     </div>
                     <div class="col-auto">
-                        <button type="button" class="btn btn-sm btn-secondary set-correct-btn" data-option-index="${optionCounter}">
+                        <button type="button" class="btn btn-sm btn-secondary set-correct-btn" 
+                                data-option-index="${optionCounter}"
+                                data-question-type="${questionType}">
                             Set Correct
                         </button>
                     </div>
                     <div class="col-auto">
-                        <button type="button" class="remove-option-btn">✕</button>
+                        <button type="button" class="remove-option-btn" title="Remove option">✕</button>
                     </div>
                 </div>
                 <input type="hidden" name="options[${optionCounter}][is_correct]" value="${isCorrect ? '1' : '0'}" class="correct-value">
@@ -197,22 +265,14 @@
         
         const setCorrectBtn = optionDiv.querySelector('.set-correct-btn');
         setCorrectBtn.addEventListener('click', function() {
-            document.querySelectorAll('.set-correct-btn').forEach(btn => {
-                btn.classList.remove('btn-correct-selected');
-                btn.classList.add('btn-secondary');
-                btn.textContent = 'Set Correct';
-            });
-            document.querySelectorAll('.correct-value').forEach(input => input.value = '0');
-            document.querySelectorAll('.option-card').forEach(card => card.classList.remove('correct-option'));
-            
-            this.classList.remove('btn-secondary');
-            this.classList.add('btn-correct-selected');
-            this.textContent = '✓ Correct';
-            optionDiv.querySelector('.correct-value').value = '1';
-            optionDiv.classList.add('correct-option');
+            handleSetCorrect(this, optionDiv);
         });
         
         optionDiv.querySelector('.remove-option').addEventListener('click', function() {
+            if (isTrueFalse) {
+                alert('True/False questions must have exactly 2 options. You cannot remove options.');
+                return;
+            }
             if (document.querySelectorAll('.option-card').length <= 2) {
                 alert('You need at least 2 options');
                 return;
@@ -221,7 +281,48 @@
         });
         
         if (isCorrect) {
-            setCorrectBtn.click();
+            handleSetCorrect(setCorrectBtn, optionDiv);
+        }
+    }
+    
+    function handleSetCorrect(button, optionDiv) {
+        const isMultiple = button.dataset.questionType === 'multiple_choice';
+        
+        if (isMultiple) {
+            // Multiple choice - toggle correct status
+            const currentValue = optionDiv.querySelector('.correct-value').value;
+            const isCurrentlyCorrect = currentValue === '1';
+            
+            if (isCurrentlyCorrect) {
+                // Unmark as correct
+                button.classList.remove('btn-correct-selected');
+                button.classList.add('btn-secondary');
+                button.textContent = 'Set Correct';
+                optionDiv.querySelector('.correct-value').value = '0';
+                optionDiv.classList.remove('correct-option');
+            } else {
+                // Mark as correct
+                button.classList.remove('btn-secondary');
+                button.classList.add('btn-correct-selected');
+                button.textContent = '✓ Correct';
+                optionDiv.querySelector('.correct-value').value = '1';
+                optionDiv.classList.add('correct-option');
+            }
+        } else {
+            // Single choice or True/False - only one can be correct
+            document.querySelectorAll('.set-correct-btn').forEach(btn => {
+                btn.classList.remove('btn-correct-selected');
+                btn.classList.add('btn-secondary');
+                btn.textContent = 'Set Correct';
+            });
+            document.querySelectorAll('.correct-value').forEach(input => input.value = '0');
+            document.querySelectorAll('.option-card').forEach(card => card.classList.remove('correct-option'));
+            
+            button.classList.remove('btn-secondary');
+            button.classList.add('btn-correct-selected');
+            button.textContent = '✓ Correct';
+            optionDiv.querySelector('.correct-value').value = '1';
+            optionDiv.classList.add('correct-option');
         }
     }
     
@@ -231,12 +332,22 @@
         return div.innerHTML;
     }
     
+    // Add option button
     document.getElementById('add-option').addEventListener('click', function() {
+        if (isTrueFalse) {
+            alert('True/False questions can only have 2 options (True and False). You cannot add more options.');
+            return;
+        }
         addOption('', false);
     });
     
+    // Initialize existing remove buttons
     document.querySelectorAll('.remove-option-btn').forEach(btn => {
         btn.addEventListener('click', function() {
+            if (isTrueFalse) {
+                alert('True/False questions must have exactly 2 options. You cannot remove options.');
+                return;
+            }
             if (document.querySelectorAll('.option-card').length <= 2) {
                 alert('You need at least 2 options');
                 return;
@@ -245,24 +356,15 @@
         });
     });
     
+    // Initialize existing set correct buttons
     document.querySelectorAll('.set-correct-btn').forEach(btn => {
         btn.addEventListener('click', function() {
-            document.querySelectorAll('.set-correct-btn').forEach(b => {
-                b.classList.remove('btn-correct-selected');
-                b.classList.add('btn-secondary');
-                b.textContent = 'Set Correct';
-            });
-            document.querySelectorAll('.correct-value').forEach(input => input.value = '0');
-            document.querySelectorAll('.option-card').forEach(card => card.classList.remove('correct-option'));
-            
-            this.classList.remove('btn-secondary');
-            this.classList.add('btn-correct-selected');
-            this.textContent = '✓ Correct';
-            this.closest('.option-card').querySelector('.correct-value').value = '1';
-            this.closest('.option-card').classList.add('correct-option');
+            const optionCard = this.closest('.option-card');
+            handleSetCorrect(this, optionCard);
         });
     });
     
+    // Form validation before submit
     document.getElementById('questionForm').addEventListener('submit', function(e) {
         let correctCount = 0;
         document.querySelectorAll('.correct-value').forEach(input => {
@@ -271,7 +373,14 @@
         
         if (correctCount === 0) {
             e.preventDefault();
-            alert('Please select the correct answer by clicking "Set Correct" on one option');
+            alert('Please select at least one correct answer by clicking "Set Correct" on the option(s)');
+            return false;
+        }
+        
+        // For single choice and true/false, ensure only one correct answer
+        if ((isSingleChoice || isTrueFalse) && correctCount > 1) {
+            e.preventDefault();
+            alert('For ' + (isTrueFalse ? 'True/False' : 'Single Choice') + ' questions, only ONE option can be marked as correct.');
             return false;
         }
         
@@ -285,7 +394,23 @@
             alert('Please fill in all option texts');
             return false;
         }
+        
+        // For True/False, ensure exactly 2 options
+        if (isTrueFalse && document.querySelectorAll('.option-card').length !== 2) {
+            e.preventDefault();
+            alert('True/False questions must have exactly 2 options (True and False)');
+            return false;
+        }
     });
+    
+    // Disable option text editing for True/False? (optional - uncomment if needed)
+    @if($question->question_type == 'true_false')
+    // For True/False, make option text read-only
+    document.querySelectorAll('.option-card input[type="text"]').forEach(input => {
+        input.readOnly = true;
+        input.style.backgroundColor = '#e9ecef';
+    });
+    @endif
 </script>
 @endpush
 @endsection

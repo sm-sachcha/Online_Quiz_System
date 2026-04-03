@@ -38,7 +38,7 @@ class QuizStarted implements ShouldBroadcast
         return [
             'quiz_id' => $this->quiz->id,
             'title' => $this->quiz->title,
-            'start_time' => $this->startTime,
+            'start_time' => $this->startTime->toIso8601String(),
             'duration' => $this->quiz->duration_minutes,
         ];
     }

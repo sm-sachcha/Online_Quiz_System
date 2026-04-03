@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class CategoryController extends Controller
@@ -113,78 +114,111 @@ class CategoryController extends Controller
     }
 
     /**
-     * Show assign users page for category
+     * Show the assign users page
      */
     public function assignUsers(Category $category)
     {
+        // Check permission
         if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to assign users to this category.');
         }
         
+        // Get all active users (regular users only)
         $users = User::where('role', 'user')
             ->where('is_active', true)
             ->orderBy('name')
             ->get();
         
-        $assignedUsers = $category->assignedUsers()->pluck('user_id');
+        // Get already assigned user IDs
+        $assignedUserIds = DB::table('category_user')
+            ->where('category_id', $category->id)
+            ->pluck('user_id')
+            ->toArray();
+        
+        // Get assigned users collection
+        $assignedUsers = User::whereIn('id', $assignedUserIds)->get();
         
         return view('admin.categories.assign-users', compact('category', 'users', 'assignedUsers'));
     }
 
     /**
-     * Assign or remove user from category
+     * Assign or remove a user from a category
      */
     public function assignUser(Request $request, Category $category)
     {
-        if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
-            return response()->json(['success' => false, 'message' => 'Permission denied'], 403);
-        }
-        
-        $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'action' => 'required|in:assign,remove'
-        ]);
-        
-        $user = User::find($request->user_id);
-        
         try {
-            if ($request->action == 'assign') {
+            $userId = $request->input('user_id');
+            $action = $request->input('action');
+            
+            // Log the request
+            \Log::info('Assign user request', [
+                'category_id' => $category->id,
+                'user_id' => $userId,
+                'action' => $action
+            ]);
+            
+            if ($action == 'assign') {
                 // Check if already assigned
-                if ($category->assignedUsers()->where('user_id', $user->id)->exists()) {
+                $exists = DB::table('category_user')
+                    ->where('category_id', $category->id)
+                    ->where('user_id', $userId)
+                    ->exists();
+                
+                if ($exists) {
                     return response()->json([
                         'success' => false, 
-                        'message' => 'User already assigned to this category'
-                    ], 400);
+                        'message' => 'User is already assigned to this category'
+                    ]);
                 }
                 
-                // Assign the user - NO status field, just attach
-                $category->assignedUsers()->attach($user->id);
-                
-                return response()->json([
-                    'success' => true, 
-                    'message' => 'User assigned successfully',
-                    'user_name' => $user->name
+                // Insert new assignment
+                DB::table('category_user')->insert([
+                    'category_id' => $category->id,
+                    'user_id' => $userId,
+                    'created_at' => now(),
+                    'updated_at' => now()
                 ]);
                 
-            } else if ($request->action == 'remove') {
-                // Remove the user
-                $category->assignedUsers()->detach($user->id);
+                $assignedCount = DB::table('category_user')
+                    ->where('category_id', $category->id)
+                    ->count();
                 
                 return response()->json([
-                    'success' => true, 
-                    'message' => 'User removed successfully',
-                    'user_name' => $user->name
+                    'success' => true,
+                    'message' => 'User assigned successfully',
+                    'assigned_count' => $assignedCount
                 ]);
             }
             
-            return response()->json(['success' => false, 'message' => 'Invalid action'], 400);
+            if ($action == 'remove') {
+                // Remove assignment
+                DB::table('category_user')
+                    ->where('category_id', $category->id)
+                    ->where('user_id', $userId)
+                    ->delete();
+                
+                $assignedCount = DB::table('category_user')
+                    ->where('category_id', $category->id)
+                    ->count();
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'User removed successfully',
+                    'assigned_count' => $assignedCount
+                ]);
+            }
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid action. Must be "assign" or "remove"'
+            ]);
             
         } catch (\Exception $e) {
-            \Log::error('Category assignment error: ' . $e->getMessage());
+            \Log::error('Assign user error: ' . $e->getMessage());
             return response()->json([
-                'success' => false, 
-                'message' => 'Failed to update assignment: ' . $e->getMessage()
-            ], 500);
+                'success' => false,
+                'message' => 'Error: ' . $e->getMessage()
+            ]);
         }
     }
 }

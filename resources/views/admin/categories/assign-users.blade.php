@@ -115,6 +115,14 @@
     .btn-danger:hover {
         background-color: #c82333;
     }
+    .count-badge {
+        font-size: 14px;
+        font-weight: bold;
+        background: rgba(255,255,255,0.2);
+        border-radius: 20px;
+        padding: 2px 10px;
+        margin-left: 8px;
+    }
 </style>
 
 <div class="row">
@@ -149,11 +157,10 @@
                 <!-- Category Info -->
                 <div class="alert alert-info mb-3">
                     <i class="fas fa-info-circle"></i>
-                    <strong>Category Details:</strong> {{ $category->name }}
+                    <strong>Category Name:</strong> {{ $category->name }}
                     @if($category->description)
                         <br><strong>Description:</strong> {{ $category->description }}
                     @endif
-                    <br><strong>Created By:</strong> {{ $category->creator->name }}
                 </div>
 
                 <!-- Search Users -->
@@ -179,7 +186,7 @@
                                     $isAssigned = $assignedUsers->contains($user->id);
                                 @endphp
                                 <tr class="user-item" data-user-id="{{ $user->id }}" data-user-name="{{ $user->name }}" data-user-email="{{ $user->email }}" data-is-assigned="{{ $isAssigned ? 'true' : 'false' }}">
-                                    <td class="text-center">{{ $index + 1 }}    </td>
+                                    <td class="text-center">{{ $index + 1 }}     </td>
                                     <td>
                                         <div class="d-flex align-items-center">
                                             <div class="avatar-sm me-2">
@@ -241,7 +248,7 @@
     $(document).ready(function() {
         // Show notification function
         function showNotification(message, type = 'success') {
-            const bgColor = type === 'success' ? '#10882c' : '#dc3545';
+            const bgColor = type === 'success' ? '#28a745' : '#dc3545';
             const icon = type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle';
             
             // Remove existing notifications
@@ -266,11 +273,11 @@
             }, 3000);
         }
         
-        // Show loading on button
+        // Loading on button
         function showLoading(button) {
             const originalHtml = button.html();
             button.data('original-html', originalHtml);
-            button.html('<span class="loading-spinner"></span>');
+            button.html('<span class="loading-spinner"></span> Processing...');
             button.prop('disabled', true);
         }
         
@@ -280,14 +287,11 @@
             button.prop('disabled', false);
         }
         
-        // Update assigned count
         function updateAssignedCount() {
             const assignedCount = $('.assigned-badge').length;
             $('#assignedCount').text(assignedCount);
-            console.log('Assigned count updated:', assignedCount);
         }
         
-        // Handle action button click
         function handleActionClick() {
             const button = $(this);
             const userId = button.data('user-id');
@@ -297,12 +301,14 @@
             const statusBadge = row.find('.status-badge');
             const actionCell = row.find('.action-cell');
             
-            console.log('Action:', action, 'User:', userName, 'ID:', userId);
+            // Get category ID from URL (format: admin/categories/ID/assign-users)
+            const pathParts = window.location.pathname.split('/');
+            const categoryId = pathParts[3];
             
             showLoading(button);
             
             $.ajax({
-                url: '{{ route("admin.categories.assign-user", $category) }}',
+                url: `/admin/categories/${categoryId}/assign-user`,
                 method: 'POST',
                 data: {
                     _token: '{{ csrf_token() }}',
@@ -310,8 +316,6 @@
                     action: action
                 },
                 success: function(response) {
-                    console.log('Response:', response);
-                    
                     if (response.success) {
                         if (action === 'assign') {
                             // Change button to Remove
@@ -328,9 +332,6 @@
                             statusBadge.removeClass('not-assigned-badge');
                             statusBadge.addClass('assigned-badge');
                             statusBadge.html('<i class="fas fa-check-circle"></i> Assigned');
-                            
-                            // Update row data attribute
-                            row.data('is-assigned', 'true');
                             
                             showNotification(`User "${userName}" has been assigned to this category.`, 'success');
                         } else {
@@ -349,9 +350,6 @@
                             statusBadge.addClass('not-assigned-badge');
                             statusBadge.html('<i class="fas fa-times-circle"></i> Not Assigned');
                             
-                            // Update row data attribute
-                            row.data('is-assigned', 'false');
-                            
                             showNotification(`User "${userName}" has been removed from this category.`, 'success');
                         }
                         
@@ -360,16 +358,20 @@
                         
                         // Update assigned count
                         updateAssignedCount();
+                        hideLoading(button);
                     } else {
                         showNotification(`Error: ${response.message}`, 'danger');
                         hideLoading(button);
                     }
                 },
                 error: function(xhr) {
-                    console.error('AJAX Error:', xhr);
                     let errorMsg = 'Something went wrong';
                     if (xhr.responseJSON && xhr.responseJSON.message) {
                         errorMsg = xhr.responseJSON.message;
+                    } else if (xhr.status === 403) {
+                        errorMsg = 'You do not have permission to perform this action.';
+                    } else if (xhr.status === 404) {
+                        errorMsg = 'The requested resource was not found.';
                     }
                     showNotification(`Error: ${errorMsg}`, 'danger');
                     hideLoading(button);
@@ -378,7 +380,7 @@
         }
         
         // Attach event handlers to action buttons
-        $('.action-btn').on('click', handleActionClick);
+        $(document).on('click', '.action-btn', handleActionClick);
         
         // Search functionality
         $('#searchUsers').on('keyup', function() {
@@ -401,8 +403,6 @@
         
         // Initialize assigned count
         updateAssignedCount();
-        
-        console.log('Page loaded. Assigned users:', $('.assigned-badge').length);
     });
 </script>
 @endpush

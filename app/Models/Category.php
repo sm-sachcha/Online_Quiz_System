@@ -37,11 +37,19 @@ class Category extends Model
     }
     
     /**
-     * Users assigned to this category
+     * Get the users assigned to this category
+     */
+    public function users()
+    {
+        return $this->belongsToMany(User::class, 'category_user', 'category_id', 'user_id')
+                    ->withTimestamps();
+    }
+    
+    /**
+     * Alias for users() - for compatibility
      */
     public function assignedUsers()
     {
-        return $this->belongsToMany(User::class, 'category_users', 'category_id', 'user_id')
-            ->withTimestamps();
+        return $this->users();
     }
 }

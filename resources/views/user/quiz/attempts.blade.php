@@ -38,7 +38,7 @@
                                         <th>Score</th>
                                         <th>Correct/Total</th>
                                         <th>Percentage</th>
-                                        <th>Time Taken</th>
+                                        <th>Time Remaining</th>
                                         <th>Status</th>
                                         <th>Actions</th>
                                     </tr>

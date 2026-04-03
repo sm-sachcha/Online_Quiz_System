@@ -7,6 +7,7 @@ use App\Models\QuizAttempt;
 use App\Models\QuizResult;
 use App\Models\UserAnswer;
 use App\Models\UserProfile;
+use App\Models\QuizParticipant;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
@@ -35,7 +36,8 @@ class ResultService
                 'selected_option_id' => $answer->option_id,
                 'is_correct' => $answer->is_correct,
                 'points_earned' => $answer->points_earned,
-                'time_taken' => $answer->time_taken_seconds
+                'time_taken' => $answer->time_taken_seconds,
+                'show_answer' => $answer->question->show_answer ?? false
             ];
         }
         
@@ -56,10 +58,35 @@ class ResultService
             ]
         );
         
-        // Update user profile stats
-        $this->updateUserProfile($attempt->user_id, $attempt, $result);
+        // Update user profile stats (only for registered users)
+        if ($attempt->user_id) {
+            $this->updateUserProfile($attempt->user_id, $attempt, $result);
+        } else {
+            // For guest users, update participant stats
+            $this->updateGuestParticipantStats($attempt, $result);
+        }
         
         return $result;
+    }
+    
+    /**
+     * Update guest participant statistics
+     */
+    private function updateGuestParticipantStats(QuizAttempt $attempt, QuizResult $result)
+    {
+        if ($attempt->participant_id) {
+            $participant = QuizParticipant::find($attempt->participant_id);
+            if ($participant) {
+                // You can add guest-specific stats here if needed
+                // For now, we'll just log or skip
+                \Log::info('Guest completed quiz', [
+                    'participant_id' => $participant->id,
+                    'guest_name' => $participant->guest_name,
+                    'quiz_id' => $attempt->quiz_id,
+                    'score' => $attempt->score
+                ]);
+            }
+        }
     }
     
     /**
@@ -67,14 +94,12 @@ class ResultService
      */
     public function calculateFinalResults(Quiz $quiz)
     {
-        // Use proper Eloquent query to get QuizAttempt models
         $attempts = QuizAttempt::where('quiz_id', $quiz->id)
             ->where('status', 'completed')
-            ->with(['quiz', 'user'])
-            ->get(); // This returns Collection of QuizAttempt models
+            ->with(['quiz', 'user', 'participant'])
+            ->get();
         
         foreach ($attempts as $attempt) {
-            // Ensure we're passing a QuizAttempt model, not a stdClass
             if ($attempt instanceof QuizAttempt) {
                 $this->calculateResult($attempt);
             }
@@ -86,7 +111,7 @@ class ResultService
     }
     
     /**
-     * Get user's quiz history
+     * Get user's quiz history (for registered users)
      */
     public function getUserQuizHistory($userId)
     {
@@ -113,8 +138,7 @@ class ResultService
      */
     public function getDetailedResult($attemptId)
     {
-        // Find the attempt by ID to ensure we have a proper model
-        $attempt = QuizAttempt::with(['quiz', 'result', 'user'])
+        $attempt = QuizAttempt::with(['quiz', 'result', 'user', 'participant'])
             ->findOrFail($attemptId);
         
         return $this->getDetailedResultForAttempt($attempt);
@@ -145,14 +169,19 @@ class ResultService
                 'is_correct' => $answer->is_correct,
                 'points_earned' => $answer->points_earned,
                 'time_taken' => $answer->time_taken_seconds,
-                'explanation' => $answer->question->explanation
+                'explanation' => $answer->question->explanation,
+                'show_answer' => $answer->question->show_answer ?? false
             ];
         }
+        
+        // Get display name (handle both registered and guest users)
+        $displayName = $attempt->user ? $attempt->user->name : ($attempt->participant ? $attempt->participant->guest_name : 'Guest');
         
         return [
             'attempt' => $attempt,
             'result' => $result,
             'answers' => $detailedAnswers,
+            'display_name' => $displayName,
             'summary' => [
                 'total_questions' => $attempt->total_questions,
                 'correct_answers' => $attempt->correct_answers,
@@ -169,7 +198,7 @@ class ResultService
     }
     
     /**
-     * Update user profile statistics
+     * Update user profile statistics (for registered users only)
      */
     private function updateUserProfile($userId, QuizAttempt $attempt, QuizResult $result)
     {
@@ -196,7 +225,7 @@ class ResultService
      */
     public function generateCertificateData($attemptId)
     {
-        $attempt = QuizAttempt::with(['user', 'quiz', 'result'])
+        $attempt = QuizAttempt::with(['user', 'participant', 'quiz', 'result'])
             ->findOrFail($attemptId);
         
         $result = $attempt->result;
@@ -205,8 +234,11 @@ class ResultService
             return null;
         }
         
+        // Get user name (handle both registered and guest users)
+        $userName = $attempt->user ? $attempt->user->name : ($attempt->participant ? $attempt->participant->guest_name : 'Guest');
+        
         return [
-            'user_name' => $attempt->user->name,
+            'user_name' => $userName,
             'quiz_title' => $attempt->quiz->title,
             'score' => $attempt->score,
             'percentage' => $result->percentage,
@@ -235,12 +267,18 @@ class ResultService
                 'highest_score' => 0,
                 'lowest_score' => 0,
                 'pass_rate' => 0,
-                'average_time' => 0
+                'average_time' => 0,
+                'total_participants' => 0
             ];
         }
         
         $passedAttempts = $attempts->filter(function ($attempt) {
             return $attempt->result && $attempt->result->passed;
+        })->count();
+        
+        // Count unique participants (by user_id or participant_id)
+        $uniqueParticipants = $attempts->unique(function ($attempt) {
+            return $attempt->user_id ?? $attempt->participant_id;
         })->count();
         
         return [
@@ -251,7 +289,8 @@ class ResultService
             'pass_rate' => round(($passedAttempts / $totalAttempts) * 100, 2),
             'average_time' => round($attempts->avg(function ($attempt) {
                 return $attempt->ended_at ? $attempt->ended_at->diffInMinutes($attempt->started_at) : 0;
-            }), 2)
+            }), 2),
+            'total_participants' => $uniqueParticipants
         ];
     }
     
@@ -313,10 +352,8 @@ class ResultService
         
         $rank = 1;
         foreach ($attempts as $attempt) {
-            // Update rank in quiz result
             QuizResult::where('quiz_attempt_id', $attempt->id)
                 ->update(['rank' => $rank]);
-            
             $rank++;
         }
     }
@@ -327,17 +364,20 @@ class ResultService
     public function exportToCsv(Quiz $quiz)
     {
         $attempts = QuizAttempt::where('quiz_id', $quiz->id)
-            ->with(['user', 'result'])
+            ->with(['user', 'participant', 'result'])
             ->where('status', 'completed')
             ->get();
         
         $csvData = [];
-        $csvData[] = ['User Name', 'Email', 'Score', 'Percentage', 'Passed', 'Rank', 'Started At', 'Completed At'];
+        $csvData[] = ['Participant Name', 'Type', 'Score', 'Percentage', 'Passed', 'Rank', 'Started At', 'Completed At'];
         
         foreach ($attempts as $attempt) {
+            $name = $attempt->user ? $attempt->user->name : ($attempt->participant ? $attempt->participant->guest_name : 'Guest');
+            $type = $attempt->user ? 'Registered' : 'Guest';
+            
             $csvData[] = [
-                $attempt->user->name,
-                $attempt->user->email,
+                $name,
+                $type,
                 $attempt->score,
                 $attempt->result->percentage ?? 0,
                 $attempt->result->passed ? 'Yes' : 'No',

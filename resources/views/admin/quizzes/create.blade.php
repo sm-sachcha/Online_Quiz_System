@@ -3,6 +3,41 @@
 @section('title', 'Create Quiz')
 
 @section('content')
+<style>
+    .datetime-wrapper {
+        position: relative;
+    }
+    .reset-datetime {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        cursor: pointer;
+        color: #dc3545;
+        background: white;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s;
+        z-index: 10;
+    }
+    .reset-datetime:hover {
+        background-color: #dc3545;
+        color: white;
+        transform: translateY(-50%) scale(1.1);
+    }
+    .datetime-input {
+        padding-right: 35px !important;
+    }
+    .category-optional {
+        background-color: #f8f9fa;
+        border-left: 4px solid #17a2b8;
+    }
+</style>
+
 <div class="row">
     <div class="col-md-8 mx-auto">
         <div class="card">
@@ -33,16 +68,17 @@
 
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label for="category_id" class="form-label">Category <span class="text-danger">*</span></label>
+                            <label for="category_id" class="form-label">Category <span class="text-muted">(Optional)</span></label>
                             <select class="form-select @error('category_id') is-invalid @enderror" 
-                                    id="category_id" name="category_id" required>
-                                <option value="">Select Category</option>
+                                    id="category_id" name="category_id">
+                                <option value="">-- No Category --</option>
                                 @foreach($categories as $category)
                                     <option value="{{ $category->id }}" {{ old('category_id') == $category->id ? 'selected' : '' }}>
                                         {{ $category->name }}
                                     </option>
                                 @endforeach
                             </select>
+                            <small class="text-muted">You can leave this empty to create a quiz without a category</small>
                             @error('category_id')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
@@ -85,9 +121,14 @@
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="scheduled_at" class="form-label">Schedule Start (Optional)</label>
-                            <input type="datetime-local" class="form-control @error('scheduled_at') is-invalid @enderror" 
-                                   id="scheduled_at" name="scheduled_at" value="{{ old('scheduled_at') }}">
-                            <small class="text-muted">Leave blank to start immediately</small>
+                            <div class="datetime-wrapper">
+                                <input type="datetime-local" class="form-control datetime-input @error('scheduled_at') is-invalid @enderror" 
+                                       id="scheduled_at" name="scheduled_at" value="{{ old('scheduled_at') }}">
+                                <span class="reset-datetime" onclick="resetDateTime('scheduled_at')" title="Clear schedule start">
+                                    <i class="fas fa-times-circle"></i>
+                                </span>
+                            </div>
+                            <small class="text-muted">Leave blank to start when admin clicks "Start Quiz"</small>
                             @error('scheduled_at')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
@@ -95,8 +136,13 @@
 
                         <div class="col-md-6 mb-3">
                             <label for="ends_at" class="form-label">End Date (Optional)</label>
-                            <input type="datetime-local" class="form-control @error('ends_at') is-invalid @enderror" 
-                                   id="ends_at" name="ends_at" value="{{ old('ends_at') }}">
+                            <div class="datetime-wrapper">
+                                <input type="datetime-local" class="form-control datetime-input @error('ends_at') is-invalid @enderror" 
+                                       id="ends_at" name="ends_at" value="{{ old('ends_at') }}">
+                                <span class="reset-datetime" onclick="resetDateTime('ends_at')" title="Clear end date">
+                                    <i class="fas fa-times-circle"></i>
+                                </span>
+                            </div>
                             <small class="text-muted">Leave blank for no expiry</small>
                             @error('ends_at')
                                 <div class="invalid-feedback">{{ $message }}</div>
@@ -124,13 +170,21 @@
                                 <label class="form-check-label" for="is_published">
                                     Publish Immediately
                                 </label>
+                                <div class="form-text text-muted">
+                                    If unchecked, you can publish later from the edit page
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     <div class="alert alert-info">
                         <i class="fas fa-info-circle"></i> 
-                        <strong>Note:</strong> After creating the quiz, you'll be able to add questions with individual points and time limits.
+                        <strong>Note:</strong> After creating the quiz, you'll be able to:
+                        <ul class="mb-0 mt-2">
+                            <li>Add questions with individual points and time limits</li>
+                            <li>Choose whether to show correct answers to users</li>
+                            <li>Start the quiz manually from the admin panel</li>
+                        </ul>
                     </div>
 
                     <div class="d-grid gap-2">
@@ -146,4 +200,43 @@
         </div>
     </div>
 </div>
+
+@push('scripts')
+<script>
+    function resetDateTime(fieldId) {
+        const input = document.getElementById(fieldId);
+        if (input) {
+            input.value = '';
+            const resetBtn = input.nextElementSibling;
+            if (resetBtn) {
+                resetBtn.style.transform = 'translateY(-50%) scale(1.2)';
+                setTimeout(() => {
+                    resetBtn.style.transform = 'translateY(-50%) scale(1)';
+                }, 200);
+            }
+        }
+    }
+    
+    // Optional: Add validation to ensure ends_at is after scheduled_at
+    document.getElementById('ends_at')?.addEventListener('change', function() {
+        const scheduledAt = document.getElementById('scheduled_at').value;
+        const endsAt = this.value;
+        
+        if (scheduledAt && endsAt && endsAt <= scheduledAt) {
+            alert('End date must be after the scheduled start date');
+            this.value = '';
+        }
+    });
+    
+    document.getElementById('scheduled_at')?.addEventListener('change', function() {
+        const endsAt = document.getElementById('ends_at').value;
+        const scheduledAt = this.value;
+        
+        if (endsAt && scheduledAt && endsAt <= scheduledAt) {
+            alert('End date must be after the scheduled start date');
+            document.getElementById('ends_at').value = '';
+        }
+    });
+</script>
+@endpush
 @endsection

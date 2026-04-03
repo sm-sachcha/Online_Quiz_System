@@ -37,7 +37,7 @@
                             <input type="text" class="form-control @error('icon') is-invalid @enderror" 
                                    id="icon" name="icon" value="{{ old('icon') }}" 
                                    placeholder="fas fa-tag">
-                            <small class="text-muted">Font Awesome icon class (e.g., fas fa-book, fas fa-code)</small>
+                            <small class="text-muted">Font Awesome icon class (fas fa-book, fas fa-code)</small>
                             @error('icon')
                                 <div class="invalid-feedback">{{ $message }}</div>
                             @enderror
@@ -75,7 +75,7 @@
 
 @push('scripts')
 <script>
-    // Preview icon color change
+    // icon color change
     document.getElementById('color').addEventListener('change', function() {
         const preview = document.querySelector('#icon-preview');
         if (preview) {

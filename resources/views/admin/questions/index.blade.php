@@ -5,8 +5,12 @@
 @section('content')
 <style>
     .handle {
-        cursor: move;
+        cursor: grab;
         color: #6c757d;
+        transition: color 0.3s;
+    }
+    .handle:active {
+        cursor: grabbing;
     }
     .handle:hover {
         color: #007bff;
@@ -23,6 +27,22 @@
     }
     .sortable-drag {
         opacity: 0.8;
+        cursor: grabbing !important;
+    }
+    .sortable-chosen {
+        background-color: #fff3cd;
+    }
+    .reorder-loading {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0,0,0,0.8);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 5px;
+        z-index: 9999;
+        display: none;
     }
 </style>
 
@@ -39,27 +59,24 @@
             </div>
             <div class="card-body">
                 @if($questions->count() > 0)
-                    <div class="alert alert-info">
-                        <i class="fas fa-arrows-alt"></i> <strong>Drag and drop</strong> to reorder questions.
-                    </div>
                     
                     <div class="table-responsive">
-                        <table class="table table-hover">
+                        <table class="table table-hover" id="questionsTable">
                             <thead class="table-light">
                                 <tr>
-                                    <th style="width: 50px;">Order</th>
+                                    <th style="width: 60px;">Order</th>
                                     <th>Question</th>
-                                    <th style="width: 120px;">Type</th>
+                                    <th style="width: 130px;">Type</th>
                                     <th style="width: 80px;">Points</th>
                                     <th style="width: 100px;">Time (sec)</th>
-                                    <th style="width: 200px;">Options</th>
+                                    <th style="width: 220px;">Options</th>
                                     <th style="width: 100px;">Actions</th>
                                  </thead>
                             <tbody id="sortable">
                                 @foreach($questions as $index => $question)
-                                    <tr class="question-row" data-id="{{ $question->id }}">
-                                        <td class="handle text-center">
-                                            <i class="fas fa-grip-vertical"></i> {{ $question->order }}
+                                    <tr class="question-row" data-id="{{ $question->id }}" data-order="{{ $question->order }}">
+                                        <td class="handle text-center" style="cursor: grab;">
+                                            <i class="fas fa-grip-vertical"></i> <span class="order-badge">{{ $question->order }}</span>
                                         </td>
                                         <td>
                                             <strong>{{ Str::limit($question->question_text, 80) }}</strong>
@@ -68,6 +85,12 @@
                                                 <small class="text-muted">
                                                     <i class="fas fa-info-circle"></i> Has explanation
                                                 </small>
+                                            @endif
+                                            @if($question->show_answer)
+                                                <br>
+                                                <span class="badge bg-info">
+                                                    <i class="fas fa-eye"></i> Show Answer
+                                                </span>
                                             @endif
                                         </td>
                                         <td>
@@ -86,14 +109,14 @@
                                             <span class="badge bg-warning">{{ $question->time_seconds }}s</span>
                                         </td>
                                         <td>
-                                            @foreach($question->options as $option)
+                                            @foreach($question->options as $optIndex => $option)
                                                 <div class="small mb-1">
                                                     @if($option->is_correct)
                                                         <i class="fas fa-check-circle text-success"></i>
                                                     @else
                                                         <i class="far fa-circle text-muted"></i>
                                                     @endif
-                                                    {{ Str::limit($option->option_text, 40) }}
+                                                    <span class="option-text">{{ Str::limit($option->option_text, 35) }}</span>
                                                 </div>
                                             @endforeach
                                         </td>
@@ -104,11 +127,12 @@
                                                     <i class="fas fa-edit"></i>
                                                 </a>
                                                 <form action="{{ route('admin.quizzes.questions.destroy', [$quiz, $question]) }}" 
-                                                      method="POST" class="d-inline delete-form">
+                                                      method="POST" class="d-inline delete-form" id="delete-form-{{ $question->id }}">
                                                     @csrf
                                                     @method('DELETE')
                                                     <button type="button" 
                                                             class="btn btn-sm btn-danger delete-question-btn" 
+                                                            data-id="{{ $question->id }}"
                                                             data-question-text="{{ Str::limit($question->question_text, 50) }}"
                                                             title="Delete">
                                                         <i class="fas fa-trash"></i>
@@ -148,7 +172,7 @@
     </div>
 </div>
 
-<!-- Custom Delete Confirmation Modal -->
+<!-- Delete Confirmation Modal -->
 <div class="modal fade" id="deleteQuestionModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -158,8 +182,8 @@
             </div>
             <div class="modal-body">
                 <p>Are you sure you want to delete the question:</p>
-                <p class="fw-bold" id="deleteQuestionText"></p>
-                <p class="text-danger">This action cannot be undone! All options for this question will also be deleted.</p>
+                <p class="fw-bold text-danger" id="deleteQuestionText"></p>
+                <p class="text-warning">This action cannot be undone! All options for this question will also be deleted.</p>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -169,53 +193,113 @@
     </div>
 </div>
 
+<!-- Loading Overlay -->
+<div class="reorder-loading" id="reorderLoading">
+    <i class="fas fa-spinner fa-spin"></i> Saving order...
+</div>
+
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
 <script>
     $(document).ready(function() {
-        let deleteForm = null;
+        let deleteId = null;
+        let isReordering = false;
+        
+        // Check if Sortable is loaded
+        if (typeof Sortable === 'undefined') {
+            console.error('SortableJS not loaded!');
+            alert('Drag and drop library not loaded. Please refresh the page.');
+        } else {
+            console.log('SortableJS loaded successfully');
+        }
         
         // Initialize Sortable for drag and drop
-        const sortable = new Sortable(document.getElementById('sortable'), {
-            handle: '.handle',
-            animation: 150,
-            onEnd: function() {
-                const questions = [];
-                document.querySelectorAll('#sortable tr').forEach((row, index) => {
-                    questions.push({
-                        id: row.dataset.id,
-                        order: index + 1
-                    });
-                });
-                
-                fetch('{{ route("admin.quizzes.questions.reorder", $quiz) }}', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': '{{ csrf_token() }}'
-                    },
-                    body: JSON.stringify({ questions: questions })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Update order numbers
-                        document.querySelectorAll('#sortable tr .handle').forEach((el, idx) => {
-                            el.innerHTML = '<i class="fas fa-grip-vertical"></i> ' + (idx + 1);
+        const sortableContainer = document.getElementById('sortable');
+        if (sortableContainer) {
+            const sortable = new Sortable(sortableContainer, {
+                handle: '.handle',
+                animation: 300,
+                ghostClass: 'sortable-ghost',
+                dragClass: 'sortable-drag',
+                chosenClass: 'sortable-chosen',
+                onStart: function() {
+                    console.log('Drag started');
+                },
+                onEnd: function(evt) {
+                    console.log('Drag ended');
+                    if (isReordering) return;
+                    
+                    const questions = [];
+                    const rows = document.querySelectorAll('#sortable tr');
+                    
+                    rows.forEach((row, index) => {
+                        const newOrder = index + 1;
+                        const questionId = row.dataset.id;
+                        const orderSpan = row.querySelector('.order-badge');
+                        
+                        if (orderSpan) {
+                            orderSpan.textContent = newOrder;
+                        }
+                        
+                        questions.push({
+                            id: questionId,
+                            order: newOrder
                         });
-                        showNotification('Questions reordered successfully!', 'success');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error reordering:', error);
-                    showNotification('Failed to reorder questions', 'danger');
-                });
-            }
-        });
+                    });
+                    
+                    console.log('Sending reorder request:', questions);
+                    
+                    // Show loading
+                    $('#reorderLoading').fadeIn();
+                    isReordering = true;
+                    
+                    // Send AJAX request
+                    fetch('{{ route("admin.quizzes.questions.reorder", $quiz) }}', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                            'Accept': 'application/json'
+                        },
+                        body: JSON.stringify({ questions: questions })
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        $('#reorderLoading').fadeOut();
+                        isReordering = false;
+                        
+                        if (data.success) {
+                            showNotification('Questions reordered successfully!', 'success');
+                            // Update order numbers in the table
+                            rows.forEach((row, idx) => {
+                                const handleSpan = row.querySelector('.handle');
+                                if (handleSpan) {
+                                    handleSpan.innerHTML = '<i class="fas fa-grip-vertical"></i> <span class="order-badge">' + (idx + 1) + '</span>';
+                                }
+                            });
+                        } else {
+                            showNotification('Failed to reorder questions: ' + (data.message || 'Unknown error'), 'danger');
+                            // Reload to restore original order
+                            setTimeout(() => location.reload(), 2000);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error reordering:', error);
+                        $('#reorderLoading').fadeOut();
+                        isReordering = false;
+                        showNotification('Network error. Please refresh the page.', 'danger');
+                    });
+                }
+            });
+            
+            console.log('Sortable initialized successfully');
+        } else {
+            console.error('Sortable container not found');
+        }
         
         // Handle delete button click
         $('.delete-question-btn').on('click', function() {
-            deleteForm = $(this).closest('form');
+            deleteId = $(this).data('id');
             const questionText = $(this).data('question-text');
             $('#deleteQuestionText').text(questionText);
             $('#deleteQuestionModal').modal('show');
@@ -223,28 +307,42 @@
         
         // Handle confirm delete
         $('#confirmDeleteQuestionBtn').on('click', function() {
-            if (deleteForm) {
-                deleteForm.submit();
+            if (deleteId) {
+                $(`#delete-form-${deleteId}`).submit();
             }
             $('#deleteQuestionModal').modal('hide');
         });
         
         function showNotification(message, type) {
-            const notification = document.createElement('div');
-            notification.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 end-0 m-3`;
-            notification.style.zIndex = '9999';
-            notification.style.minWidth = '250px';
-            notification.innerHTML = `
-                <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i>
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-            document.body.appendChild(notification);
+            const notification = $('<div class="alert alert-dismissible fade show position-fixed top-0 end-0 m-3" style="z-index: 9999; min-width: 300px;">' +
+                '<i class="fas ' + (type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle') + ' me-2"></i>' +
+                message +
+                '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' +
+                '</div>');
+            
+            if (type === 'success') {
+                notification.addClass('alert-success');
+            } else if (type === 'danger') {
+                notification.addClass('alert-danger');
+            } else {
+                notification.addClass('alert-info');
+            }
+            
+            $('body').append(notification);
             
             setTimeout(() => {
-                notification.remove();
+                notification.fadeOut(300, function() {
+                    $(this).remove();
+                });
             }, 3000);
         }
+        
+        // Debug: Log when page loads
+        console.log('Questions page loaded', {
+            quizId: {{ $quiz->id }},
+            questionsCount: {{ $questions->count() }},
+            reorderUrl: '{{ route("admin.quizzes.questions.reorder", $quiz) }}'
+        });
     });
 </script>
 @endpush

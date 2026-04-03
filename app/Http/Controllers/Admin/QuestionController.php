@@ -14,14 +14,12 @@ class QuestionController extends Controller
 {
     public function index(Quiz $quiz)
     {
-        // Check if user owns this quiz or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to view questions for this quiz.');
         }
         
         $questions = $quiz->questions()->with('options')->orderBy('order')->get();
         
-        // Debug - add this to check
         \Log::info('Questions index', [
             'quiz_id' => $quiz->id,
             'quiz_title' => $quiz->title,
@@ -43,7 +41,6 @@ class QuestionController extends Controller
 
     public function store(Request $request, Quiz $quiz)
     {
-        // Check if user owns this quiz or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to add questions to this quiz.');
         }
@@ -123,7 +120,6 @@ class QuestionController extends Controller
             abort(404);
         }
         
-        // Check if user owns this quiz or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to edit questions for this quiz.');
         }
@@ -138,7 +134,6 @@ class QuestionController extends Controller
             abort(404);
         }
         
-        // Check if user owns this quiz or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to update questions for this quiz.');
         }
@@ -213,24 +208,73 @@ class QuestionController extends Controller
     public function destroy(Quiz $quiz, Question $question)
     {
         if ($question->quiz_id !== $quiz->id) {
-            abort(404);
+            abort(404, 'Question not found in this quiz.');
         }
         
-        // Check if user owns this quiz or is Master Admin
-        if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
+        $user = Auth::user();
+        if (!$user->isMasterAdmin() && $quiz->created_by !== $user->id) {
             abort(403, 'You do not have permission to delete questions for this quiz.');
         }
-        
-        // ... rest of the destroy method remains the same ...
+
+        DB::beginTransaction();
+        try {
+            $quiz->decrement('total_points', $question->points);
+            $quiz->decrement('total_questions');
+            $question->delete();
+
+            $remainingQuestions = $quiz->questions()->orderBy('order')->get();
+            foreach ($remainingQuestions as $index => $q) {
+                $q->update(['order' => $index + 1]);
+            }
+
+            DB::commit();
+            
+            return redirect()->route('admin.quizzes.questions.index', $quiz)
+                ->with('success', 'Question deleted successfully.');
+            
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Question deletion error: ' . $e->getMessage());
+            
+            return back()->with('error', 'Failed to delete question. ' . $e->getMessage());
+        }
     }
 
     public function reorder(Request $request, Quiz $quiz)
     {
-        // Check if user owns this quiz or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
-            abort(403, 'You do not have permission to reorder questions for this quiz.');
+            return response()->json(['success' => false, 'message' => 'Permission denied'], 403);
         }
         
-        // ... rest of the reorder method remains the same ...
+        $request->validate([
+            'questions' => 'required|array',
+            'questions.*.id' => 'required|exists:questions,id',
+            'questions.*.order' => 'required|integer|min:1'
+        ]);
+        
+        \Log::info('Reorder questions', [
+            'quiz_id' => $quiz->id,
+            'questions' => $request->questions
+        ]);
+        
+        DB::beginTransaction();
+        try {
+            foreach ($request->questions as $questionData) {
+                $updated = Question::where('id', $questionData['id'])
+                    ->where('quiz_id', $quiz->id)
+                    ->update(['order' => $questionData['order']]);
+                
+                if (!$updated) {
+                    throw new \Exception("Failed to update question ID: {$questionData['id']}");
+                }
+            }
+            DB::commit();
+            
+            return response()->json(['success' => true]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Failed to reorder questions: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
     }
 }

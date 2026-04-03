@@ -10,7 +10,11 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- Custom CSS -->
+    <!-- Pusher JS -->
+    <script src="https://js.pusher.com/7.2/pusher.min.js"></script>
+    <!-- Laravel Echo -->
+    <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.15.0/dist/echo.iife.js"></script>
+    
     <style>
         * {
             margin: 0;
@@ -111,6 +115,48 @@
         .content-wrapper {
             flex: 1;
         }
+        
+        /* Quiz start countdown overlay */
+        .quiz-start-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        
+        .countdown-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 40px;
+            border-radius: 20px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        
+        .countdown-number {
+            font-size: 72px;
+            font-weight: bold;
+            color: white;
+            font-family: monospace;
+        }
+        
+        .countdown-label {
+            font-size: 24px;
+            color: white;
+            margin-top: 20px;
+        }
+        
+        .countdown-sub {
+            font-size: 14px;
+            color: rgba(255,255,255,0.7);
+            margin-top: 10px;
+        }
     </style>
     @stack('styles')
 </head>
@@ -133,18 +179,32 @@
                                 <a class="nav-link" href="{{ route('login') }}">
                                     <i class="fas fa-sign-in-alt"></i> Login
                                 </a>
-                            </li>
+                            <!-- </li>
                             <li class="nav-item">
                                 <a class="nav-link" href="{{ route('register') }}">
                                     <i class="fas fa-user-plus"></i> Register
                                 </a>
-                            </li>
+                            </li> -->
                         @else
-                            <li class="nav-item">
-                                <a class="nav-link" href="{{ route('user.dashboard') }}">
-                                    <i class="fas fa-tachometer-alt"></i> Dashboard
-                                </a>
-                            </li>
+                            @if(Auth::user()->isUser())
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{{ route('user.dashboard') }}">
+                                        <i class="fas fa-tachometer-alt"></i> Dashboard
+                                    </a>
+                                </li>
+                            @elseif(Auth::user()->isAdmin())
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{{ route('admin.dashboard') }}">
+                                        <i class="fas fa-tachometer-alt"></i> Dashboard
+                                    </a>
+                                </li>
+                            @elseif(Auth::user()->isMasterAdmin())
+                                <li class="nav-item">
+                                    <a class="nav-link" href="{{ route('master-admin.dashboard') }}">
+                                        <i class="fas fa-tachometer-alt"></i> Dashboard
+                                    </a>
+                                </li>
+                            @endif
                             <li class="nav-item dropdown">
                                 <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
                                     <i class="fas fa-user-circle"></i> {{ Auth::user()->name }}
@@ -155,11 +215,13 @@
                                             <i class="fas fa-user"></i> My Profile
                                         </a>
                                     </li>
+                                    @if(Auth::user()->isUser())
                                     <li>
                                         <a class="dropdown-item" href="{{ route('user.results') }}">
                                             <i class="fas fa-chart-line"></i> My Results
                                         </a>
                                     </li>
+                                    @endif
                                     @if(Auth::user()->isAdmin())
                                         <li><hr class="dropdown-divider"></li>
                                         <li>
@@ -171,7 +233,7 @@
                                     @if(Auth::user()->isMasterAdmin())
                                         <li>
                                             <a class="dropdown-item" href="{{ route('master-admin.dashboard') }}">
-                                                <i class="fas fa-crown"></i> Master Admin
+                                                <i class="fas fa-crown"></i> Master Admin Panel
                                             </a>
                                         </li>
                                     @endif
@@ -252,6 +314,112 @@
         window.hideLoading = function(spinner) {
             if (spinner) spinner.remove();
         };
+        
+        // Initialize Pusher and Echo
+        window.initializeEcho = function(quizId, callbacks) {
+            if (typeof window.Echo === 'undefined' && typeof Pusher !== 'undefined') {
+                window.Echo = new Echo({
+                    broadcaster: 'pusher',
+                    key: '{{ env('PUSHER_APP_KEY') }}',
+                    cluster: '{{ env('PUSHER_APP_CLUSTER') }}',
+                    forceTLS: false,
+                    enabledTransports: ['ws', 'wss'],
+                    authEndpoint: '/broadcasting/auth',
+                    auth: {
+                        headers: {
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                        }
+                    }
+                });
+            }
+            
+            if (quizId && window.Echo) {
+                const channel = window.Echo.channel(`quiz.${quizId}`);
+                
+                if (callbacks) {
+                    if (callbacks.onQuizStarted) {
+                        channel.listen('.quiz.started', callbacks.onQuizStarted);
+                    }
+                    if (callbacks.onQuizEnded) {
+                        channel.listen('.quiz.ended', callbacks.onQuizEnded);
+                    }
+                    if (callbacks.onLeaderboardUpdated) {
+                        channel.listen('.leaderboard.updated', callbacks.onLeaderboardUpdated);
+                    }
+                    if (callbacks.onParticipantJoined) {
+                        channel.listen('.participant.joined', callbacks.onParticipantJoined);
+                    }
+                    if (callbacks.onParticipantLeft) {
+                        channel.listen('.participant.left', callbacks.onParticipantLeft);
+                    }
+                }
+                
+                return channel;
+            }
+            
+            return null;
+        };
+        
+        // Show countdown when quiz starts
+        window.showQuizStartCountdown = function(seconds, redirectUrl) {
+            let countdown = seconds;
+            
+            const overlay = document.createElement('div');
+            overlay.className = 'quiz-start-overlay';
+            overlay.innerHTML = `
+                <div class="countdown-box">
+                    <div class="countdown-number" id="countdownNumber">${countdown}</div>
+                    <div class="countdown-label">Quiz Starting Soon!</div>
+                    <div class="countdown-sub">Get ready...</div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            
+            const interval = setInterval(() => {
+                countdown--;
+                const numEl = document.getElementById('countdownNumber');
+                if (numEl) numEl.textContent = countdown;
+                
+                if (countdown <= 0) {
+                    clearInterval(interval);
+                    overlay.remove();
+                    if (redirectUrl) {
+                        window.location.href = redirectUrl;
+                    }
+                }
+            }, 1000);
+            
+            return interval;
+        };
+        
+        // Show notification
+        window.showNotification = function(message, type = 'success') {
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type} alert-dismissible fade show position-fixed top-0 end-0 m-3`;
+            notification.style.zIndex = '9999';
+            notification.style.minWidth = '300px';
+            notification.style.animation = 'slideIn 0.3s ease';
+            notification.innerHTML = `
+                <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i>
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        };
+        
+        // Add slideIn animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
     </script>
     @stack('scripts')
 </body>

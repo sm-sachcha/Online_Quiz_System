@@ -13,7 +13,6 @@
         margin-bottom: 10px;
         border: 1px solid #dee2e6;
         border-radius: 8px;
-        position: relative;
     }
     .option-card:hover {
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -22,46 +21,27 @@
         background-color: #6c757d;
         color: white;
         border: none;
-        padding: 8px 16px;
-        border-radius: 6px;
+        padding: 6px 12px;
+        border-radius: 4px;
         cursor: pointer;
         transition: all 0.3s;
-        width: 100%;
-        font-size: 14px;
-        white-space: nowrap;
-    }
-    .btn-set-correct:hover {
-        background-color: #5a6268;
-        transform: translateY(-1px);
     }
     .btn-correct-selected {
         background-color: #28a745 !important;
-        color: white !important;
-    }
-    .btn-correct-selected:hover {
-        background-color: #218838 !important;
     }
     .remove-option-btn {
         background-color: #dc3545;
         color: white;
         border: none;
-        border-radius: 50%;
+        border-radius: 4px;
         width: 32px;
         height: 32px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
         cursor: pointer;
         transition: all 0.3s;
-        opacity: 0.7;
     }
     .remove-option-btn:hover {
-        opacity: 1;
-        transform: scale(1.1);
         background-color: #c82333;
-    }
-    .option-card .card-body {
-        padding: 12px 15px !important;
+        transform: scale(1.05);
     }
     .option-letter {
         background-color: #6c757d;
@@ -73,19 +53,31 @@
         justify-content: center;
         border-radius: 8px;
         font-weight: bold;
-        font-size: 16px;
     }
-    .option-text-input {
-        width: 100%;
-        padding: 8px 12px;
-        border: 1px solid #ced4da;
-        border-radius: 6px;
-        font-size: 14px;
+    .correct-checkbox {
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
     }
-    .option-text-input:focus {
-        outline: none;
-        border-color: #80bdff;
-        box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+    .question-type-info {
+        padding: 10px 15px;
+        border-radius: 8px;
+        margin-bottom: 15px;
+    }
+    .info-multiple {
+        background-color: #d1ecf1;
+        border-left: 4px solid #17a2b8;
+        color: #0c5460;
+    }
+    .info-single {
+        background-color: #fff3cd;
+        border-left: 4px solid #ffc107;
+        color: #856404;
+    }
+    .info-truefalse {
+        background-color: #e2e3e5;
+        border-left: 4px solid #6c757d;
+        color: #383d41;
     }
 </style>
 
@@ -113,7 +105,7 @@
                             <label for="question_type" class="form-label">Question Type <span class="text-danger">*</span></label>
                             <select class="form-select @error('question_type') is-invalid @enderror" 
                                     id="question_type" name="question_type" required>
-                                <option value="">Select Type</option>
+                                <option value="">-- Select Question Type --</option>
                                 <option value="multiple_choice" {{ old('question_type') == 'multiple_choice' ? 'selected' : '' }}>Multiple Choice (Multiple Correct Answers)</option>
                                 <option value="single_choice" {{ old('question_type') == 'single_choice' ? 'selected' : '' }}>Single Choice (One Correct Answer)</option>
                                 <option value="true_false" {{ old('question_type') == 'true_false' ? 'selected' : '' }}>True / False</option>
@@ -133,7 +125,7 @@
                         </div>
 
                         <div class="col-md-3 mb-3">
-                            <label for="time_seconds" class="form-label">Time Limit <span class="text-danger">*</span></label>
+                            <label for="time_seconds" class="form-label">Time Limit (seconds) <span class="text-danger">*</span></label>
                             <input type="number" class="form-control @error('time_seconds') is-invalid @enderror" 
                                    id="time_seconds" name="time_seconds" value="{{ old('time_seconds', 30) }}" min="10" max="300" required>
                             @error('time_seconds')
@@ -142,40 +134,50 @@
                         </div>
                     </div>
 
-                    <!-- Options Container -->
-                    <div id="options-container">
+                    <!-- Question Type Info Message -->
+                    <div id="typeInfo" class="question-type-info" style="display: none;">
+                        <i class="fas fa-info-circle"></i> <span id="typeInfoText"></span>
+                    </div>
+
+                    <!-- Options Container (for multiple_choice and single_choice) -->
+                    <div id="optionsContainer" style="display: none;">
                         <div class="d-flex justify-content-between align-items-center mb-3">
                             <label class="form-label fw-bold">Answer Options <span class="text-danger">*</span></label>
-                            <button type="button" class="btn btn-sm btn-success" id="add-option">
+                            <button type="button" class="btn btn-sm btn-success" id="addOptionBtn">
                                 <i class="fas fa-plus"></i> Add Option
                             </button>
                         </div>
-                        
-                        <div id="options-list">
+                        <div id="optionsList">
                             <!-- Options will be added here dynamically -->
                         </div>
                     </div>
 
                     <!-- True/False Container -->
-                    <div id="true-false-container" style="display: none;">
+                    <div id="trueFalseContainer" style="display: none;">
                         <label class="form-label">Correct Answer <span class="text-danger">*</span></label>
                         <div class="row">
                             <div class="col-md-6">
                                 <div class="card">
-                                    <div class="card-body">
+                                    <div class="card-body text-center">
                                         <div class="form-check">
                                             <input class="form-check-input" type="radio" name="true_false_correct" id="true_option" value="true">
-                                            <label class="form-check-label" for="true_option">True</label>
+                                            <label class="form-check-label" for="true_option">
+                                                <i class="fas fa-check-circle text-success fa-2x"></i>
+                                                <h5 class="mt-2">True</h5>
+                                            </label>
                                         </div>
                                     </div>
                                 </div>
                             </div>
                             <div class="col-md-6">
                                 <div class="card">
-                                    <div class="card-body">
+                                    <div class="card-body text-center">
                                         <div class="form-check">
                                             <input class="form-check-input" type="radio" name="true_false_correct" id="false_option" value="false">
-                                            <label class="form-check-label" for="false_option">False</label>
+                                            <label class="form-check-label" for="false_option">
+                                                <i class="fas fa-times-circle text-danger fa-2x"></i>
+                                                <h5 class="mt-2">False</h5>
+                                            </label>
                                         </div>
                                     </div>
                                 </div>
@@ -205,11 +207,6 @@
                         </div>
                     </div>
 
-                    <div class="alert alert-warning" id="warning-alert">
-                        <i class="fas fa-exclamation-triangle"></i> 
-                        <strong id="warning-text">For Single Choice, click the "✓ Set as Correct" button on the correct option.</strong>
-                    </div>
-
                     <div class="d-grid gap-2 mt-3">
                         <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
                             <i class="fas fa-save"></i> Create Question
@@ -226,45 +223,54 @@
 
 @push('scripts')
 <script>
-    let optionCount = 0;
-    let currentType = 'single_choice';
-    
+    let optionCounter = 0;
+    let currentType = '';
+
+    const typeSelect = document.getElementById('question_type');
+    const optionsContainer = document.getElementById('optionsContainer');
+    const trueFalseContainer = document.getElementById('trueFalseContainer');
+    const optionsList = document.getElementById('optionsList');
+    const typeInfo = document.getElementById('typeInfo');
+    const typeInfoText = document.getElementById('typeInfoText');
+    const addOptionBtn = document.getElementById('addOptionBtn');
+
     function addOption(optionText = '', isCorrect = false) {
-        optionCount++;
+        optionCounter++;
+        const isMultiple = currentType === 'multiple_choice';
+        
         const optionDiv = document.createElement('div');
         optionDiv.className = 'option-card card mb-2';
-        optionDiv.setAttribute('data-option-index', optionCount);
+        optionDiv.setAttribute('data-option-idx', optionCounter);
         
-        if (currentType === 'multiple_choice') {
+        if (isMultiple) {
             optionDiv.innerHTML = `
                 <div class="card-body">
-                    <div class="row align-items-center g-2">
+                    <div class="row align-items-center">
                         <div class="col-auto">
-                            <div class="option-letter">${String.fromCharCode(64 + optionCount)}</div>
+                            <div class="option-letter">${String.fromCharCode(64 + optionCounter)}</div>
                         </div>
                         <div class="col">
-                            <input type="text" class="option-text-input" 
-                                   name="options[${optionCount}][text]" 
+                            <input type="text" class="form-control" 
+                                   name="options[${optionCounter}][text]" 
                                    value="${escapeHtml(optionText)}" 
                                    placeholder="Enter option text" required>
                         </div>
                         <div class="col-auto">
                             <div class="form-check">
                                 <input class="form-check-input correct-checkbox" type="checkbox" 
-                                       name="options[${optionCount}][is_correct]" 
+                                       name="options[${optionCounter}][is_correct]" 
                                        value="1" 
-                                       ${isCorrect ? 'checked' : ''}
-                                       style="width: 20px; height: 20px;">
+                                       ${isCorrect ? 'checked' : ''}>
                                 <label class="form-check-label ms-1">Correct</label>
                             </div>
                         </div>
                         <div class="col-auto">
-                            <button type="button" class="remove-option-btn" data-option-idx="${optionCount}">
+                            <button type="button" class="remove-option-btn" data-option-idx="${optionCounter}">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </div>
                     </div>
-                    <input type="hidden" name="options[${optionCount}][order]" value="${optionCount}">
+                    <input type="hidden" name="options[${optionCounter}][order]" value="${optionCounter}">
                 </div>
             `;
             
@@ -276,116 +282,83 @@
                     optionDiv.classList.remove('correct-option');
                 }
             });
-            if (isCorrect) {
-                optionDiv.classList.add('correct-option');
-            }
+            if (isCorrect) optionDiv.classList.add('correct-option');
         } else {
-            // Single Choice - Button on the right side
             optionDiv.innerHTML = `
                 <div class="card-body">
-                    <div class="row align-items-center g-2">
+                    <div class="row align-items-center">
                         <div class="col-auto">
-                            <div class="option-letter">${String.fromCharCode(64 + optionCount)}</div>
+                            <div class="option-letter">${String.fromCharCode(64 + optionCounter)}</div>
                         </div>
                         <div class="col">
-                            <input type="text" class="option-text-input" 
-                                   name="options[${optionCount}][text]" 
+                            <input type="text" class="form-control" 
+                                   name="options[${optionCounter}][text]" 
                                    value="${escapeHtml(optionText)}" 
                                    placeholder="Enter option text" required>
                         </div>
                         <div class="col-auto">
-                            <button type="button" class="btn-set-correct set-correct-btn" 
-                                    data-option-index="${optionCount}">
+                            <button type="button" class="btn btn-sm btn-secondary set-correct-btn" 
+                                    data-option-index="${optionCounter}">
                                 <i class="fas fa-times-circle"></i> Set as Correct
                             </button>
                         </div>
                         <div class="col-auto">
-                            <button type="button" class="remove-option-btn" data-option-idx="${optionCount}">
+                            <button type="button" class="remove-option-btn" data-option-idx="${optionCounter}">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </div>
                     </div>
-                    <input type="hidden" name="options[${optionCount}][is_correct]" value="0" class="correct-value">
-                    <input type="hidden" name="options[${optionCount}][order]" value="${optionCount}">
+                    <input type="hidden" name="options[${optionCounter}][is_correct]" value="0" class="correct-value">
+                    <input type="hidden" name="options[${optionCounter}][order]" value="${optionCounter}">
                 </div>
             `;
-        }
-        
-        document.getElementById('options-list').appendChild(optionDiv);
-        
-        // Add remove handler
-        const removeBtn = optionDiv.querySelector('.remove-option-btn');
-        if (removeBtn) {
-            removeBtn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                const optionsCount = document.querySelectorAll('.option-card').length;
-                if (optionsCount <= 2) {
-                    alert('You need at least 2 options');
-                    return;
-                }
-                optionDiv.remove();
-                updateOptionLetters();
-            });
-        }
-        
-        // Add single choice set correct handler
-        if (currentType !== 'multiple_choice') {
+            
             const setCorrectBtn = optionDiv.querySelector('.set-correct-btn');
-            if (setCorrectBtn) {
-                setCorrectBtn.addEventListener('click', function() {
-                    // Reset all buttons
-                    document.querySelectorAll('.set-correct-btn').forEach(btn => {
-                        btn.classList.remove('btn-correct-selected');
-                        btn.innerHTML = '<i class="fas fa-times-circle"></i> Set as Correct';
-                    });
-                    
-                    // Reset all correct values
-                    document.querySelectorAll('.correct-value').forEach(input => {
-                        input.value = '0';
-                    });
-                    
-                    // Reset all option cards highlight
-                    document.querySelectorAll('.option-card').forEach(card => {
-                        card.classList.remove('correct-option');
-                    });
-                    
-                    // Set this option as correct
-                    this.classList.add('btn-correct-selected');
-                    this.innerHTML = '<i class="fas fa-check-circle"></i> Correct Answer ✓';
-                    
-                    const optionIndex = this.getAttribute('data-option-index');
-                    const correctInput = optionDiv.querySelector('.correct-value');
-                    if (correctInput) {
-                        correctInput.value = '1';
-                    }
-                    
-                    // Highlight this option
-                    optionDiv.classList.add('correct-option');
+            setCorrectBtn.addEventListener('click', function() {
+                document.querySelectorAll('.set-correct-btn').forEach(btn => {
+                    btn.classList.remove('btn-correct-selected');
+                    btn.classList.add('btn-secondary');
+                    btn.innerHTML = '<i class="fas fa-times-circle"></i> Set as Correct';
                 });
+                document.querySelectorAll('.correct-value').forEach(input => input.value = '0');
+                document.querySelectorAll('.option-card').forEach(card => card.classList.remove('correct-option'));
                 
-                if (isCorrect) {
-                    setCorrectBtn.click();
-                }
-            }
+                this.classList.remove('btn-secondary');
+                this.classList.add('btn-correct-selected');
+                this.innerHTML = '<i class="fas fa-check-circle"></i> Correct Answer ✓';
+                optionDiv.querySelector('.correct-value').value = '1';
+                optionDiv.classList.add('correct-option');
+            });
+            
+            if (isCorrect) setCorrectBtn.click();
         }
+        
+        optionsList.appendChild(optionDiv);
+        
+        const removeBtn = optionDiv.querySelector('.remove-option-btn');
+        removeBtn.addEventListener('click', function() {
+            if (document.querySelectorAll('.option-card').length <= 2) {
+                alert('You need at least 2 options');
+                return;
+            }
+            optionDiv.remove();
+            updateOptionLetters();
+        });
     }
     
     function updateOptionLetters() {
         const options = document.querySelectorAll('.option-card');
         options.forEach((option, index) => {
             const letterDiv = option.querySelector('.option-letter');
-            if (letterDiv) {
-                letterDiv.textContent = String.fromCharCode(65 + index);
-            }
+            if (letterDiv) letterDiv.textContent = String.fromCharCode(65 + index);
             const setCorrectBtn = option.querySelector('.set-correct-btn');
-            if (setCorrectBtn) {
-                setCorrectBtn.setAttribute('data-option-index', index + 1);
-            }
-            const removeBtn = option.querySelector('.remove-option-btn');
-            if (removeBtn) {
-                removeBtn.setAttribute('data-option-idx', index + 1);
-            }
+            if (setCorrectBtn) setCorrectBtn.setAttribute('data-option-index', index + 1);
         });
+    }
+    
+    function resetOptions() {
+        optionsList.innerHTML = '';
+        optionCounter = 0;
     }
     
     function escapeHtml(text) {
@@ -395,52 +368,69 @@
         return div.innerHTML;
     }
     
-    const typeSelect = document.getElementById('question_type');
-    const optionsDiv = document.getElementById('options-container');
-    const trueFalseDiv = document.getElementById('true-false-container');
-    const warningText = document.getElementById('warning-text');
-    
-    typeSelect.addEventListener('change', function() {
-        currentType = this.value;
-        document.getElementById('options-list').innerHTML = '';
-        optionCount = 0;
+    function loadQuestionType() {
+        const selectedType = typeSelect.value;
+        if (!selectedType) {
+            optionsContainer.style.display = 'none';
+            trueFalseContainer.style.display = 'none';
+            typeInfo.style.display = 'none';
+            return;
+        }
         
-        if (this.value === 'true_false') {
-            optionsDiv.style.display = 'none';
-            trueFalseDiv.style.display = 'block';
-            warningText.innerHTML = 'For True/False questions, select either True or False as the correct answer.';
-        } else if (this.value === 'multiple_choice') {
-            optionsDiv.style.display = 'block';
-            trueFalseDiv.style.display = 'none';
-            warningText.innerHTML = 'For Multiple Choice questions, check the box next to each correct answer. You can select multiple correct answers.';
+        currentType = selectedType;
+        optionsContainer.style.display = 'none';
+        trueFalseContainer.style.display = 'none';
+        typeInfo.style.display = 'block';
+        
+        if (selectedType === 'multiple_choice') {
+            optionsContainer.style.display = 'block';
+            typeInfo.className = 'question-type-info info-multiple';
+            typeInfoText.innerHTML = 'Multiple Choice: You can select MULTIPLE correct answers by checking the box next to each correct option.';
+            resetOptions();
             addOption('', false);
             addOption('', false);
             addOption('', false);
             addOption('', false);
-        } else if (this.value === 'single_choice') {
-            optionsDiv.style.display = 'block';
-            trueFalseDiv.style.display = 'none';
-            warningText.innerHTML = 'For Single Choice questions, click the "✓ Set as Correct" button on the correct option. Only ONE option can be correct.';
+        } 
+        else if (selectedType === 'single_choice') {
+            optionsContainer.style.display = 'block';
+            typeInfo.className = 'question-type-info info-single';
+            typeInfoText.innerHTML = 'Single Choice: Only ONE option can be marked as correct. Click the "Set as Correct" button on the correct option.';
+            resetOptions();
             addOption('', false);
             addOption('', false);
             addOption('', false);
             addOption('', false);
+        } 
+        else if (selectedType === 'true_false') {
+            trueFalseContainer.style.display = 'block';
+            typeInfo.className = 'question-type-info info-truefalse';
+            typeInfoText.innerHTML = 'True/False: Select either True or False as the correct answer.';
+        }
+    }
+    
+    typeSelect.addEventListener('change', loadQuestionType);
+    
+    addOptionBtn.addEventListener('click', function() {
+        if (currentType === 'multiple_choice' || currentType === 'single_choice') {
+            addOption('', false);
+        } else {
+            alert('Please select a question type first');
         }
     });
     
-    document.getElementById('add-option').addEventListener('click', function() {
-        addOption('', false);
-    });
+    if (typeSelect.value) {
+        loadQuestionType();
+    }
     
-    // Initialize for single choice (default)
-    addOption('', false);
-    addOption('', false);
-    addOption('', false);
-    addOption('', false);
-    
-    // Form validation
     document.getElementById('questionForm').addEventListener('submit', function(e) {
         const type = typeSelect.value;
+        
+        if (!type) {
+            e.preventDefault();
+            alert('Please select a question type');
+            return false;
+        }
         
         if (type === 'multiple_choice') {
             let hasCorrect = false;
@@ -449,51 +439,48 @@
             });
             if (!hasCorrect) {
                 e.preventDefault();
-                alert('❌ Please select at least one correct answer by checking the checkbox.');
+                alert('Please select at least one correct answer by checking the checkbox.');
                 return false;
             }
-        } else if (type === 'single_choice') {
+        } 
+        else if (type === 'single_choice') {
             let correctCount = 0;
             document.querySelectorAll('.correct-value').forEach(input => {
-                if (input.value === '1') {
-                    correctCount++;
-                }
+                if (input.value === '1') correctCount++;
             });
             if (correctCount === 0) {
                 e.preventDefault();
-                alert('❌ Please select ONE correct answer by clicking the "✓ Set as Correct" button on the correct option.');
+                alert('Please select ONE correct answer by clicking the "Set as Correct" button.');
                 return false;
             }
             if (correctCount > 1) {
                 e.preventDefault();
-                alert('❌ For Single Choice questions, you can only select ONE correct answer.');
+                alert('For Single Choice questions, only ONE correct answer is allowed.');
                 return false;
             }
-        } else if (type === 'true_false') {
-            if (!document.querySelector('input[name="true_false_correct"]:checked')) {
+        } 
+        else if (type === 'true_false') {
+            const trueChecked = document.getElementById('true_option').checked;
+            const falseChecked = document.getElementById('false_option').checked;
+            if (!trueChecked && !falseChecked) {
                 e.preventDefault();
-                alert('❌ Please select True or False as the correct answer.');
+                alert('Please select True or False as the correct answer.');
                 return false;
             }
         }
         
-        // Check if all options have text
-        let allFilled = true;
-        let emptyOptions = [];
-        document.querySelectorAll('.option-text-input').forEach((input, index) => {
-            if (!input.value.trim()) {
-                allFilled = false;
-                emptyOptions.push(index + 1);
+        if (type !== 'true_false') {
+            let allFilled = true;
+            document.querySelectorAll('.option-card input[type="text"]').forEach(input => {
+                if (!input.value.trim()) allFilled = false;
+            });
+            if (!allFilled) {
+                e.preventDefault();
+                alert('Please fill in all option texts');
+                return false;
             }
-        });
-        
-        if (!allFilled) {
-            e.preventDefault();
-            alert(`❌ Please fill in all option texts. Empty options found at: ${emptyOptions.join(', ')}`);
-            return false;
         }
         
-        // Show loading
         const submitBtn = document.getElementById('submitBtn');
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creating Question...';

@@ -5,7 +5,23 @@
 @section('content')
 <div class="row">
     <div class="col-md-12">
-        <h2 class="mb-4">Welcome, {{ Auth::user()->name }}!</h2>
+        @if(session('show_welcome') && session('welcome_message'))
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="fas fa-smile-wink"></i> {{ session('welcome_message') }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            @php
+                session()->forget('show_welcome');
+                session()->forget('welcome_message');
+            @endphp
+        @endif
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <h2 class="mb-4">Admin Dashboard</h2>
+        <p class="text-muted">Welcome back, <strong>{{ Auth::user()->name }}</strong>!</p>
     </div>
 </div>
 
@@ -114,8 +130,12 @@
                                     <div>
                                         <h6 class="mb-1">{{ $quiz->title }}</h6>
                                         <small class="text-muted">
-                                            <i class="fas fa-user"></i> {{ $quiz->creator->name }} |
-                                            <i class="fas fa-tag"></i> {{ $quiz->category->name }}
+                                            <i class="fas fa-user"></i> {{ $quiz->creator->name ?? 'Unknown' }} |
+                                            @if($quiz->category)
+                                                <i class="fas fa-tag"></i> {{ $quiz->category->name }}
+                                            @else
+                                                <i class="fas fa-globe"></i> Public Quiz
+                                            @endif
                                         </small>
                                     </div>
                                     <span class="badge {{ $quiz->is_published ? 'bg-success' : 'bg-secondary' }}">
@@ -184,11 +204,10 @@
                     <div class="table-responsive">
                         <table class="table table-hover">
                             <thead>
-                                 <tr>
+                                <tr>
                                     <th>Quiz</th>
                                     <th>Attempts</th>
-                                 </tr>
-                            </thead>
+                                 </thead>
                             <tbody>
                                 @foreach($topQuizzes as $quiz)
                                     <tr>
@@ -197,7 +216,7 @@
                                     </tr>
                                 @endforeach
                             </tbody>
-                        </table>
+                         </table>
                     </div>
                 @else
                     <div class="text-center py-4">

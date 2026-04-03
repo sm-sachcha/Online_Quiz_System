@@ -10,11 +10,7 @@ class Leaderboard extends Model
     use HasFactory;
 
     protected $fillable = [
-        'user_id', 
-        'quiz_id', 
-        'score', 
-        'rank', 
-        'metadata'
+        'quiz_id', 'user_id', 'participant_id', 'score', 'rank', 'metadata'
     ];
 
     protected $casts = [
@@ -27,9 +23,9 @@ class Leaderboard extends Model
     {
         return $this->belongsTo(User::class);
     }
-
-    public function quiz()
+    
+    public function participant()
     {
-        return $this->belongsTo(Quiz::class);
+        return $this->belongsTo(QuizParticipant::class, 'participant_id');
     }
 }

@@ -10,6 +10,7 @@ use App\Models\UserActivity;
 use App\Services\ResultService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Response;
 
 class ReportController extends Controller
 {
@@ -194,6 +195,9 @@ class ReportController extends Controller
         ));
     }
 
+    /**
+     * Export quiz report to CSV
+     */
     public function exportQuizReport(Request $request)
     {
         $request->validate([
@@ -201,64 +205,112 @@ class ReportController extends Controller
             'format' => 'required|in:csv,pdf'
         ]);
 
-        $format = $request->input('format'); // ✅ fix for protected visibility
         $quiz = Quiz::findOrFail($request->quiz_id);
-        $attempts = QuizAttempt::with('user', 'result')
+        
+        // Get all completed attempts with user and participant data
+        $attempts = QuizAttempt::with(['user', 'result', 'participant'])
             ->where('quiz_id', $quiz->id)
             ->where('status', 'completed')
+            ->orderByDesc('score')
             ->get();
 
-        if ($format === 'csv') {
-            $filename = 'quiz-report-' . $quiz->slug . '-' . now()->format('Y-m-d') . '.csv';
+        if ($request->input('format') === 'csv') {
+            $filename = 'quiz-report-' . $quiz->slug . '-' . now()->format('Y-m-d-H-i-s') . '.csv';
+            
             $headers = [
                 'Content-Type' => 'text/csv',
                 'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+                'Cache-Control' => 'no-cache, no-store, must-revalidate',
+                'Pragma' => 'no-cache',
+                'Expires' => '0'
             ];
 
             $callback = function() use ($attempts, $quiz) {
                 $file = fopen('php://output', 'w');
                 
+                // Add UTF-8 BOM for Excel compatibility
+                fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+                
+                // Headers
                 fputcsv($file, [
-                    'User Name', 
-                    'Email', 
-                    'Score', 
-                    'Total Points', 
-                    'Percentage', 
-                    'Passed', 
+                    'Rank',
+                    'User Name',
+                    'Email / Guest Name',
+                    'Score',
+                    'Total Points',
+                    'Percentage',
+                    'Passed',
                     'Correct Answers',
                     'Incorrect Answers',
-                    'Started At', 
-                    'Completed At'
+                    'Total Questions',
+                    'Accuracy (%)',
+                    'Started At',
+                    'Completed At',
+                    'Time Taken (seconds)',
+                    'Time Taken (minutes)'
                 ]);
-
+                
+                $rank = 1;
                 foreach ($attempts as $attempt) {
+                    // Get user/guest name
+                    $userName = 'Guest';
+                    $userEmail = 'N/A';
+                    
+                    if ($attempt->user_id && $attempt->user) {
+                        $userName = $attempt->user->name;
+                        $userEmail = $attempt->user->email;
+                    } elseif ($attempt->participant_id && $attempt->participant) {
+                        $userName = $attempt->participant->guest_name ?? 'Guest';
+                        $userEmail = 'Guest User';
+                    }
+                    
                     $percentage = $quiz->total_points > 0 
-                        ? round(($attempt->score / $quiz->total_points) * 100, 2) 
+                        ? round(($attempt->score / $quiz->total_points) * 100, 2)
                         : 0;
-
+                    
+                    $accuracy = $attempt->total_questions > 0 
+                        ? round(($attempt->correct_answers / $attempt->total_questions) * 100, 2)
+                        : 0;
+                    
+                    $timeTakenSeconds = $attempt->ended_at && $attempt->started_at 
+                        ? $attempt->ended_at->diffInSeconds($attempt->started_at)
+                        : 0;
+                    
+                    $timeTakenMinutes = round($timeTakenSeconds / 60, 2);
+                    
                     fputcsv($file, [
-                        $attempt->user->name,
-                        $attempt->user->email,
+                        $rank,
+                        $userName,
+                        $userEmail,
                         $attempt->score,
                         $quiz->total_points,
                         $percentage,
-                        $attempt->result && $attempt->result->passed ? 'Yes' : 'No',
+                        ($attempt->result && $attempt->result->passed) ? 'Yes' : 'No',
                         $attempt->correct_answers,
                         $attempt->incorrect_answers,
-                        $attempt->started_at,
-                        $attempt->ended_at
+                        $attempt->total_questions,
+                        $accuracy,
+                        $attempt->started_at ? $attempt->started_at->format('Y-m-d H:i:s') : 'N/A',
+                        $attempt->ended_at ? $attempt->ended_at->format('Y-m-d H:i:s') : 'N/A',
+                        $timeTakenSeconds,
+                        $timeTakenMinutes
                     ]);
+                    
+                    $rank++;
                 }
-
+                
                 fclose($file);
             };
 
-            return response()->stream($callback, 200, $headers);
+            return Response::stream($callback, 200, $headers);
         }
 
         return back()->with('error', 'PDF export not implemented yet.');
     }
 
+    /**
+     * Export user activity to CSV
+     */
     public function exportUserActivity(Request $request)
     {
         $request->validate([
@@ -267,49 +319,54 @@ class ReportController extends Controller
             'format' => 'required|in:csv'
         ]);
 
-        $format = $request->input('format'); // ✅ fix
         $activities = UserActivity::with('user')
-            ->whereDate('created_at', '>=', $request->date_from)
-            ->whereDate('created_at', '<=', $request->date_to)
+            ->whereDate('created_at', '>=', $request->input('date_from'))
+            ->whereDate('created_at', '<=', $request->input('date_to'))
             ->orderByDesc('created_at')
             ->get();
 
-        if ($format === 'csv') {
-            $filename = 'user-activity-' . now()->format('Y-m-d') . '.csv';
-            $headers = [
-                'Content-Type' => 'text/csv',
-                'Content-Disposition' => 'attachment; filename="' . $filename . '"',
-            ];
+        $filename = 'user-activity-' . now()->format('Y-m-d-H-i-s') . '.csv';
+        
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            'Pragma' => 'no-cache',
+            'Expires' => '0'
+        ];
 
-            $callback = function() use ($activities) {
-                $file = fopen('php://output', 'w');
-
+        $callback = function() use ($activities) {
+            $file = fopen('php://output', 'w');
+            
+            // Add UTF-8 BOM for Excel compatibility
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+            
+            // Headers
+            fputcsv($file, [
+                'User Name',
+                'User Email',
+                'Action',
+                'IP Address',
+                'User Agent',
+                'Details',
+                'Created At'
+            ]);
+            
+            foreach ($activities as $activity) {
                 fputcsv($file, [
-                    'User Name', 
-                    'User Email', 
-                    'Action', 
-                    'IP Address',
-                    'Details',
-                    'Created At'
+                    $activity->user ? $activity->user->name : 'Deleted User',
+                    $activity->user ? $activity->user->email : 'N/A',
+                    $activity->action,
+                    $activity->ip_address ?? 'N/A',
+                    $activity->user_agent ?? 'N/A',
+                    is_array($activity->details) ? json_encode($activity->details) : ($activity->details ?? 'N/A'),
+                    $activity->created_at->format('Y-m-d H:i:s')
                 ]);
+            }
+            
+            fclose($file);
+        };
 
-                foreach ($activities as $activity) {
-                    fputcsv($file, [
-                        $activity->user->name ?? 'N/A',
-                        $activity->user->email ?? 'N/A',
-                        $activity->action,
-                        $activity->ip_address,
-                        json_encode($activity->details),
-                        $activity->created_at
-                    ]);
-                }
-
-                fclose($file);
-            };
-
-            return response()->stream($callback, 200, $headers);
-        }
-
-        return back()->with('error', 'Unsupported format.');
+        return Response::stream($callback, 200, $headers);
     }
 }

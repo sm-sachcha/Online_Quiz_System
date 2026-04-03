@@ -25,7 +25,7 @@
                 <h5>{{ $user->name }}</h5>
                 <p class="text-muted">{{ $user->email }}</p>
                 
-                <div class="row mt-3">
+                <!-- <div class="row mt-3">
                     <div class="col-4">
                         <h5 class="text-primary">{{ $user->profile->total_points ?? 0 }}</h5>
                         <small class="text-muted">Points</small>
@@ -38,7 +38,7 @@
                         <h5 class="text-warning">{{ $user->profile->quizzes_won ?? 0 }}</h5>
                         <small class="text-muted">Won</small>
                     </div>
-                </div>
+                </div> -->
             </div>
         </div>
     </div>

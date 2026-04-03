@@ -3,6 +3,37 @@
 @section('title', 'Manage Quizzes')
 
 @section('content')
+<style>
+    .share-link-container {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+    .share-link-input {
+        font-size: 12px;
+        padding: 4px 8px;
+        width: 200px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background-color: #f8f9fa;
+    }
+    .copy-link-btn {
+        padding: 4px 8px;
+        font-size: 12px;
+    }
+    .copy-success {
+        background-color: #28a745;
+        color: white;
+        border-color: #28a745;
+    }
+    .quiz-link-modal {
+        cursor: pointer;
+    }
+    .quiz-link-modal:hover {
+        opacity: 0.8;
+    }
+</style>
+
 <div class="row">
     <div class="col-md-12">
         <div class="card">
@@ -25,6 +56,7 @@
                                     <th>Total Time</th>
                                     <th>Points</th>
                                     <th>Status</th>
+                                    <th>Share Link</th>
                                     <th>Actions</th>
                                  </thead>
                             <tbody>
@@ -37,10 +69,16 @@
                                             <small class="text-muted">Attempts: {{ $quiz->attempts_count }}</small>
                                         </td>
                                         <td>
-                                            <span class="badge" style="background-color: {{ $quiz->category->color ?? '#6c757d' }}">
-                                                <i class="{{ $quiz->category->icon ?? 'fas fa-tag' }}"></i>
-                                                {{ $quiz->category->name }}
-                                            </span>
+                                            @if($quiz->category)
+                                                <span class="badge" style="background-color: {{ $quiz->category->color ?? '#6c757d' }}">
+                                                    <i class="{{ $quiz->category->icon ?? 'fas fa-tag' }}"></i>
+                                                    {{ $quiz->category->name }}
+                                                </span>
+                                            @else
+                                                <span class="badge bg-secondary">
+                                                    <i class="fas fa-folder-open"></i> No Category
+                                                </span>
+                                            @endif
                                         </td>
                                         <td>
                                             <span class="badge bg-info">{{ $quiz->questions_count }} questions</span>
@@ -67,6 +105,15 @@
                                             @endif
                                         </td>
                                         <td>
+                                            <div class="share-link-container">
+                                                <input type="text" class="share-link-input" id="quizLink{{ $quiz->id }}" 
+                                                       value="{{ url('https://reconstructionary-billie-unexcusably.ngrok-free.dev/user/quiz/lobby/' . $quiz->id) }}" readonly>
+                                                <button class="btn btn-sm btn-primary copy-link-btn" data-quiz-id="{{ $quiz->id }}">
+                                                    <i class="fas fa-copy"></i> Copy
+                                                </button>
+                                            </div>
+                                        </td>
+                                        <td>
                                             <div class="btn-group" role="group">
                                                 <a href="{{ route('admin.quizzes.show', $quiz) }}" 
                                                    class="btn btn-sm btn-info" title="View">
@@ -80,10 +127,14 @@
                                                    class="btn btn-sm btn-secondary" title="Manage Questions">
                                                     <i class="fas fa-question-circle"></i>
                                                 </a>
+                                                <a href="{{ route('admin.quizzes.participants', $quiz) }}" 
+                                                   class="btn btn-sm btn-success" title="View Participants">
+                                                    <i class="fas fa-users"></i>
+                                                </a>
                                                 <form action="{{ route('admin.quizzes.duplicate', $quiz) }}" 
                                                       method="POST" class="d-inline">
                                                     @csrf
-                                                    <button type="submit" class="btn btn-sm btn-success" title="Duplicate">
+                                                    <button type="submit" class="btn btn-sm btn-warning" title="Duplicate">
                                                         <i class="fas fa-copy"></i>
                                                     </button>
                                                 </form>
@@ -109,7 +160,7 @@
                                                 </form>
                                             </div>
                                         </td>
-                                     </tr>
+                                    </tr>
                                 @endforeach
                             </tbody>
                         </table>
@@ -128,6 +179,38 @@
                         </a>
                     </div>
                 @endif
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Share Quiz Modal -->
+<div class="modal fade" id="shareQuizModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-share-alt"></i> Share Quiz Link</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Share this link with participants to join the quiz:</p>
+                <div class="input-group mb-3">
+                    <input type="text" class="form-control" id="modalQuizLink" readonly>
+                    <button class="btn btn-primary" id="modalCopyLinkBtn">
+                        <i class="fas fa-copy"></i> Copy Link
+                    </button>
+                </div>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Note:</strong> Participants can join the quiz even if they don't have an account. They just need to enter their name.
+                </div>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Important:</strong> The quiz must be published for participants to access it.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -158,6 +241,76 @@
     $(document).ready(function() {
         let deleteQuizForm = null;
         
+        // Handle copy link for each quiz
+        $('.copy-link-btn').on('click', function() {
+            const quizId = $(this).data('quiz-id');
+            const linkInput = document.getElementById(`quizLink${quizId}`);
+            
+            if (linkInput) {
+                linkInput.select();
+                linkInput.setSelectionRange(0, 99999);
+                document.execCommand('copy');
+                
+                // Show success feedback
+                const btn = $(this);
+                const originalHtml = btn.html();
+                btn.html('<i class="fas fa-check"></i> Copied!');
+                btn.addClass('copy-success');
+                
+                setTimeout(() => {
+                    btn.html(originalHtml);
+                    btn.removeClass('copy-success');
+                }, 2000);
+                
+                // Show toast notification
+                showToast('Link copied to clipboard!', 'success');
+            }
+        });
+        
+        // Handle share modal (if needed)
+        $('.quiz-link-modal').on('click', function() {
+            const quizLink = $(this).data('quiz-link');
+            $('#modalQuizLink').val(quizLink);
+            $('#shareQuizModal').modal('show');
+        });
+        
+        // Handle modal copy link
+        $('#modalCopyLinkBtn').on('click', function() {
+            const linkInput = document.getElementById('modalQuizLink');
+            linkInput.select();
+            linkInput.setSelectionRange(0, 99999);
+            document.execCommand('copy');
+            
+            $(this).html('<i class="fas fa-check"></i> Copied!');
+            setTimeout(() => {
+                $(this).html('<i class="fas fa-copy"></i> Copy Link');
+            }, 2000);
+            
+            showToast('Link copied to clipboard!', 'success');
+        });
+        
+        // Toast notification function
+        function showToast(message, type = 'success') {
+            const toast = $(`
+                <div class="toast align-items-center text-white bg-${type} border-0 position-fixed top-0 end-0 m-3" role="alert" style="z-index: 9999;">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-info-circle'}"></i> ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    </div>
+                </div>
+            `);
+            
+            $('body').append(toast);
+            const bsToast = new bootstrap.Toast(toast[0], { delay: 3000 });
+            bsToast.show();
+            
+            toast.on('hidden.bs.toast', function() {
+                toast.remove();
+            });
+        }
+        
         // Handle delete button click
         $('.delete-quiz-btn').on('click', function() {
             deleteQuizForm = $(this).closest('form');
@@ -172,6 +325,12 @@
                 deleteQuizForm.submit();
             }
             $('#deleteQuizModal').modal('hide');
+        });
+        
+        // Auto-select link on click
+        $('.share-link-input').on('click', function() {
+            this.select();
+            this.setSelectionRange(0, 99999);
         });
     });
 </script>

@@ -67,20 +67,51 @@ class User extends Authenticatable
     
     /**
      * Categories assigned to this user
+     * Note: Table name is 'category_user' (singular, alphabetical order)
      */
     public function assignedCategories()
     {
-        return $this->belongsToMany(Category::class, 'category_users', 'user_id', 'category_id')
-            ->withTimestamps();
+        return $this->belongsToMany(Category::class, 'category_user', 'user_id', 'category_id')
+                    ->withTimestamps();
     }
     
     /**
-     * Quizzes directly assigned to this user
+     * Get all quizzes available to this user through assigned categories
      */
-    public function assignedQuizzes()
+    public function availableQuizzes()
     {
-        return $this->belongsToMany(Quiz::class, 'quiz_user', 'user_id', 'quiz_id')
-            ->withTimestamps();
+        $categoryIds = $this->assignedCategories()->pluck('categories.id');
+        
+        return Quiz::where('is_published', true)
+            ->whereIn('category_id', $categoryIds)
+            ->where(function($query) {
+                $query->whereNull('scheduled_at')
+                    ->orWhere('scheduled_at', '<=', now());
+            })
+            ->where(function($query) {
+                $query->whereNull('ends_at')
+                    ->orWhere('ends_at', '>=', now());
+            });
+    }
+    
+    /**
+     * Check if user can take a specific quiz
+     */
+    public function canTakeQuiz(Quiz $quiz)
+    {
+        // Check if quiz belongs to an assigned category
+        $assignedCategoryIds = $this->assignedCategories()->pluck('categories.id')->toArray();
+        
+        if (!in_array($quiz->category_id, $assignedCategoryIds)) {
+            return false;
+        }
+        
+        // Check max attempts
+        $attemptsCount = QuizAttempt::where('user_id', $this->id)
+            ->where('quiz_id', $quiz->id)
+            ->count();
+        
+        return $attemptsCount < $quiz->max_attempts;
     }
 
     public function isMasterAdmin()

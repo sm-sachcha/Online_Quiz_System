@@ -10,18 +10,9 @@ class QuizAttempt extends Model
     use HasFactory;
 
     protected $fillable = [
-        'user_id', 
-        'quiz_id', 
-        'score', 
-        'total_points', 
-        'correct_answers',
-        'incorrect_answers', 
-        'total_questions', 
-        'started_at', 
-        'ended_at',
-        'status', 
-        'cheating_logs', 
-        'ip_address'
+        'user_id', 'participant_id', 'quiz_id', 'score', 'total_points', 
+        'correct_answers', 'incorrect_answers', 'total_questions', 
+        'started_at', 'ended_at', 'status', 'cheating_logs', 'ip_address'
     ];
 
     protected $casts = [
@@ -38,6 +29,11 @@ class QuizAttempt extends Model
     {
         return $this->belongsTo(User::class);
     }
+    
+    public function participant()
+    {
+        return $this->belongsTo(QuizParticipant::class, 'participant_id');
+    }
 
     public function quiz()
     {
@@ -52,5 +48,16 @@ class QuizAttempt extends Model
     public function result()
     {
         return $this->hasOne(QuizResult::class);
+    }
+    
+    public function getDisplayNameAttribute()
+    {
+        if ($this->user_id) {
+            return $this->user ? $this->user->name : 'Unknown User';
+        }
+        if ($this->participant_id) {
+            return $this->participant ? $this->participant->guest_name : 'Guest';
+        }
+        return 'Unknown';
     }
 }

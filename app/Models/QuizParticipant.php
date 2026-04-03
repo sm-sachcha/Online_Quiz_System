@@ -10,12 +10,14 @@ class QuizParticipant extends Model
     use HasFactory;
 
     protected $fillable = [
-        'quiz_id', 'user_id', 'status', 'joined_at', 'left_at'
+        'quiz_id', 'user_id', 'guest_name', 'device_id', 'is_guest', 
+        'status', 'joined_at', 'left_at'
     ];
 
     protected $casts = [
         'joined_at' => 'datetime',
         'left_at' => 'datetime',
+        'is_guest' => 'boolean',
     ];
 
     public function quiz()
@@ -28,24 +30,13 @@ class QuizParticipant extends Model
         return $this->belongsTo(User::class);
     }
     
-    // Helper methods
-    public function isInLobby()
+    public function attempts()
     {
-        return $this->status === 'joined';
+        return $this->hasMany(QuizAttempt::class, 'participant_id');
     }
     
-    public function isTakingQuiz()
+    public function leaderboardEntries()
     {
-        return $this->status === 'taking_quiz';
-    }
-    
-    public function hasLeft()
-    {
-        return $this->status === 'left';
-    }
-    
-    public function isRegistered()
-    {
-        return $this->status === 'registered';
+        return $this->hasMany(Leaderboard::class, 'participant_id');
     }
 }

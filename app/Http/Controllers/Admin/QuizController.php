@@ -7,9 +7,12 @@ use App\Models\Quiz;
 use App\Models\Category;
 use App\Models\QuizParticipant;
 use App\Models\QuizAttempt;
+use App\Events\QuizStarted;
+use App\Events\QuizEnded;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 class QuizController extends Controller
 {
@@ -17,8 +20,6 @@ class QuizController extends Controller
     {
         $user = Auth::user();
         
-        // If Master Admin - see all quizzes
-        // If General Admin - see only quizzes they created
         if ($user->isMasterAdmin()) {
             $quizzes = Quiz::with('category', 'creator')
                 ->withCount('questions', 'attempts')
@@ -39,8 +40,6 @@ class QuizController extends Controller
     {
         $user = Auth::user();
         
-        // If Master Admin - see all categories
-        // If General Admin - see only categories they created
         if ($user->isMasterAdmin()) {
             $categories = Category::where('is_active', true)->get();
         } else {
@@ -57,7 +56,7 @@ class QuizController extends Controller
         $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'category_id' => 'required|exists:categories,id',
+            'category_id' => 'nullable|exists:categories,id',
             'duration_minutes' => 'required|integer|min:1|max:480',
             'passing_score' => 'required|integer|min:0|max:100',
             'is_random_questions' => 'boolean',
@@ -67,10 +66,11 @@ class QuizController extends Controller
             'is_published' => 'boolean'
         ]);
 
-        // Check if user has permission to use this category
-        $category = Category::find($request->category_id);
-        if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
-            return back()->with('error', 'You do not have permission to use this category.');
+        if ($request->category_id) {
+            $category = Category::find($request->category_id);
+            if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
+                return back()->with('error', 'You do not have permission to use this category.');
+            }
         }
 
         $quiz = Quiz::create([
@@ -88,7 +88,7 @@ class QuizController extends Controller
             'created_by' => Auth::id()
         ]);
 
-        $quiz->updateTotals();
+        $this->updateQuizTotals($quiz);
 
         return redirect()->route('admin.quizzes.edit', $quiz)
             ->with('success', 'Quiz created successfully! Now add questions.');
@@ -96,12 +96,15 @@ class QuizController extends Controller
 
     public function show(Quiz $quiz)
     {
-        // Check if user owns this quiz or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to view this quiz.');
         }
         
         $quiz->load('category', 'creator', 'questions.options');
+        
+        $isWaitingToStart = $quiz->is_published && 
+            (!$quiz->scheduled_at || $quiz->scheduled_at <= now()) && 
+            $quiz->participants()->where('status', 'joined')->count() > 0;
         
         $stats = [
             'total_questions' => $quiz->questions->count(),
@@ -109,24 +112,22 @@ class QuizController extends Controller
             'total_attempts' => $quiz->attempts()->count(),
             'average_score' => $quiz->attempts()->avg('score') ?? 0,
             'completion_rate' => $quiz->attempts()->count() > 0 
-                ? ($quiz->attempts()->where('status', 'completed')->count() / $quiz->attempts()->count()) * 100 
-                : 0
+                ? ($quiz->attempts()->where('status', 'completed')->count() / max($quiz->attempts()->count(), 1)) * 100 
+                : 0,
+            'participants_waiting' => $quiz->participants()->where('status', 'joined')->count()
         ];
 
-        return view('admin.quizzes.show', compact('quiz', 'stats'));
+        return view('admin.quizzes.show', compact('quiz', 'stats', 'isWaitingToStart'));
     }
 
     public function edit(Quiz $quiz)
     {
-        // Check if user owns this quiz or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to edit this quiz.');
         }
         
         $user = Auth::user();
         
-        // If Master Admin - see all categories
-        // If General Admin - see only categories they created
         if ($user->isMasterAdmin()) {
             $categories = Category::where('is_active', true)->get();
         } else {
@@ -140,7 +141,6 @@ class QuizController extends Controller
 
     public function update(Request $request, Quiz $quiz)
     {
-        // Check if user owns this quiz or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to update this quiz.');
         }
@@ -148,7 +148,7 @@ class QuizController extends Controller
         $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'category_id' => 'required|exists:categories,id',
+            'category_id' => 'nullable|exists:categories,id',
             'duration_minutes' => 'required|integer|min:1|max:480',
             'passing_score' => 'required|integer|min:0|max:100',
             'is_random_questions' => 'boolean',
@@ -158,15 +158,25 @@ class QuizController extends Controller
             'is_published' => 'boolean'
         ]);
 
-        // Check if user has permission to use this category
-        $category = Category::find($request->category_id);
-        if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
-            return back()->with('error', 'You do not have permission to use this category.');
+        if ($request->category_id) {
+            $category = Category::find($request->category_id);
+            if (!Auth::user()->isMasterAdmin() && $category->created_by !== Auth::id()) {
+                return back()->with('error', 'You do not have permission to use this category.');
+            }
+        }
+
+        $baseSlug = Str::slug($request->title);
+        $slug = $baseSlug;
+        $counter = 1;
+        
+        while (Quiz::where('slug', $slug)->where('id', '!=', $quiz->id)->exists()) {
+            $slug = $baseSlug . '-' . $counter;
+            $counter++;
         }
 
         $quiz->update([
             'title' => $request->title,
-            'slug' => Str::slug($request->title),
+            'slug' => $slug,
             'description' => $request->description,
             'category_id' => $request->category_id,
             'duration_minutes' => $request->duration_minutes,
@@ -179,7 +189,8 @@ class QuizController extends Controller
             'updated_by' => Auth::id()
         ]);
 
-        $quiz->updateTotals();
+        $quiz->refresh();
+        $this->updateQuizTotals($quiz);
 
         return redirect()->route('admin.quizzes.index')
             ->with('success', 'Quiz updated successfully.');
@@ -187,7 +198,6 @@ class QuizController extends Controller
 
     public function destroy(Quiz $quiz)
     {
-        // Check if user owns this quiz or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to delete this quiz.');
         }
@@ -200,19 +210,16 @@ class QuizController extends Controller
 
     public function duplicate(Quiz $quiz)
     {
-        // Check if user owns this quiz or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to duplicate this quiz.');
         }
         
-        // Generate unique title and slug
-        $newTitle = $quiz->title . ' (Copy)';
+        $newTitle = $quiz->title . ' (1)';
         $newSlug = Str::slug($newTitle);
         
-        // Check if slug already exists and make it unique
         $counter = 1;
         while (Quiz::where('slug', $newSlug)->exists()) {
-            $newTitle = $quiz->title . ' (Copy ' . $counter . ')';
+            $newTitle = $quiz->title . ' ( ' . $counter . ')';
             $newSlug = Str::slug($newTitle);
             $counter++;
         }
@@ -236,7 +243,7 @@ class QuizController extends Controller
             }
         }
 
-        $newQuiz->updateTotals();
+        $this->updateQuizTotals($newQuiz);
 
         return redirect()->route('admin.quizzes.edit', $newQuiz)
             ->with('success', 'Quiz duplicated successfully!');
@@ -244,7 +251,6 @@ class QuizController extends Controller
     
     public function togglePublish(Quiz $quiz)
     {
-        // Check if user owns this quiz or is Master Admin
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
             abort(403, 'You do not have permission to modify this quiz.');
         }
@@ -255,6 +261,142 @@ class QuizController extends Controller
         return back()->with('success', "Quiz has been {$status}.");
     }
     
+    /**
+     * Start quiz manually (admin)
+     */
+    public function startQuiz(Quiz $quiz)
+    {
+        if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
+            if (request()->ajax()) {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+            abort(403);
+        }
+        
+        if ($quiz->questions()->count() === 0) {
+            $message = 'Cannot start quiz without any questions. Please add questions first.';
+            if (request()->ajax()) {
+                return response()->json(['error' => $message], 422);
+            }
+            return redirect()->route('admin.quizzes.participants', $quiz)
+                ->with('error', $message);
+        }
+        
+        $quiz->update([
+            'is_published' => true,
+            'scheduled_at' => now(),
+            'ends_at' => now()->addMinutes($quiz->duration_minutes)
+        ]);
+        
+        $participants = QuizParticipant::where('quiz_id', $quiz->id)
+            ->where('status', 'joined')
+            ->count();
+        
+        $message = 'Quiz has been started! ' . $participants . ' participants have been notified.';
+        
+        if (request()->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'participants_notified' => $participants
+            ]);
+        }
+        
+        return redirect()->route('admin.quizzes.participants', $quiz)
+            ->with('success', $message);
+    }
+    
+    /**
+     * Quit/End quiz manually (admin)
+     */
+    public function quitQuiz(Quiz $quiz)
+    {
+        if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
+            if (request()->ajax()) {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+            abort(403);
+        }
+        
+        $quiz->update([
+            'is_published' => false,
+            'ends_at' => now()
+        ]);
+        
+        broadcast(new QuizEnded($quiz))->toOthers();
+        
+        Log::info('Quiz ended manually by admin', [
+            'quiz_id' => $quiz->id,
+            'quiz_title' => $quiz->title,
+            'ended_by' => Auth::user()->name
+        ]);
+        
+        if (request()->ajax()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Quiz ended successfully!'
+            ]);
+        }
+        
+        return redirect()->route('admin.quizzes.participants', $quiz)
+            ->with('success', 'Quiz has been ended. Participants can no longer take the quiz.');
+    }
+    
+    /**
+     * Get quiz status for AJAX polling
+     */
+    public function getQuizStatus(Quiz $quiz)
+    {
+        if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+        
+        $isActive = $quiz->is_published && (!$quiz->ends_at || $quiz->ends_at > now());
+        $isStarted = $quiz->is_published && $quiz->scheduled_at && $quiz->scheduled_at <= now();
+        
+        return response()->json([
+            'is_active' => $isActive,
+            'is_started' => $isStarted,
+            'is_published' => $quiz->is_published,
+            'scheduled_at' => $quiz->scheduled_at,
+            'ends_at' => $quiz->ends_at,
+            'duration_minutes' => $quiz->duration_minutes,
+            'participants_count' => $quiz->participants()->where('status', 'joined')->count(),
+            'has_questions' => $quiz->questions()->count() > 0,
+            'questions_count' => $quiz->questions()->count()
+        ]);
+    }
+    
+    /**
+     * Get quiz participants for admin (JSON) - ONLY ACTIVE LOBBY USERS
+     */
+    public function getParticipants(Quiz $quiz)
+    {
+        if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+        
+        // ONLY get participants with status 'joined' (actively in lobby)
+        $participants = QuizParticipant::with('user')
+            ->where('quiz_id', $quiz->id)
+            ->where('status', 'joined')
+            ->orderBy('joined_at', 'asc')
+            ->get()
+            ->map(function ($p) {
+                return [
+                    'id' => $p->id,
+                    'name' => $p->user ? $p->user->name : ($p->guest_name ?? 'Guest'),
+                    'is_guest' => $p->is_guest,
+                    'status' => $p->status,
+                    'joined_at' => $p->joined_at,
+                    'joined_at_human' => $p->joined_at ? $p->joined_at->diffForHumans() : 'Just now'
+                ];
+            });
+        
+        return response()->json($participants);
+    }
+    
+
 /**
  * Show quiz participants for admin
  */
@@ -265,20 +407,24 @@ public function participants(Quiz $quiz)
         abort(403, 'You do not have permission to view participants for this quiz.');
     }
     
-    // Get ALL participants from the database (not just from the relationship)
-    // Using the QuizParticipant model directly to ensure we get all records
-    $participants = \App\Models\QuizParticipant::with('user')
+    // Get all participants with their details
+    $participants = QuizParticipant::with('user')
         ->where('quiz_id', $quiz->id)
-        ->orderByRaw("FIELD(status, 'taking_quiz', 'joined', 'completed', 'left')")
-        ->orderBy('updated_at', 'desc')
-        ->get();
-    
-    // Log for debugging
-    \Log::info('Admin participants view', [
-        'quiz_id' => $quiz->id,
-        'total_participants' => $participants->count(),
-        'statuses' => $participants->pluck('status')->toArray()
-    ]);
+        ->orderByRaw("FIELD(status, 'joined', 'taking_quiz', 'completed', 'left')")
+        ->orderBy('created_at', 'desc')
+        ->get()
+        ->map(function ($p) {
+            return [
+                'id' => $p->id,
+                'user_id' => $p->user_id,
+                'name' => $p->user ? $p->user->name : ($p->guest_name ?? 'Guest'),
+                'email' => $p->user ? $p->user->email : null,
+                'is_guest' => $p->is_guest,
+                'status' => $p->status,
+                'joined_at' => $p->joined_at,
+                'updated_at' => $p->updated_at
+            ];
+        });
     
     // Get users currently taking the quiz (in_progress attempts)
     $inProgressUsers = QuizAttempt::where('quiz_id', $quiz->id)
@@ -286,27 +432,77 @@ public function participants(Quiz $quiz)
         ->pluck('user_id')
         ->toArray();
     
+    // Calculate counts
+    $lobbyUsers = $participants->where('status', 'joined')->count();
+    $activeParticipants = $participants->whereIn('status', ['joined', 'taking_quiz'])->count() + count($inProgressUsers);
+    
     // Get completed participants count
     $completedParticipants = QuizAttempt::where('quiz_id', $quiz->id)
         ->where('status', 'completed')
         ->distinct('user_id')
         ->count('user_id');
     
-    // Calculate active participants (joined + taking_quiz)
-    $activeParticipants = $participants->whereIn('status', ['joined', 'taking_quiz'])->count();
+    // Add guest completed attempts to completed count
+    $guestCompletedAttempts = QuizAttempt::where('quiz_id', $quiz->id)
+        ->where('status', 'completed')
+        ->whereNotNull('participant_id')
+        ->distinct('participant_id')
+        ->count('participant_id');
     
-    // Calculate lobby users
-    $lobbyUsers = $participants->where('status', 'joined')
-        ->whereNotIn('user_id', $inProgressUsers)
-        ->count();
+    $completedParticipants += $guestCompletedAttempts;
+    
+    // Get left participants count
+    $leftParticipants = $participants->where('status', 'left')->count();
+    
+    $isQuizStarted = $quiz->is_published && $quiz->scheduled_at && $quiz->scheduled_at <= now();
+    $hasQuestions = $quiz->questions()->count() > 0;
     
     return view('admin.quizzes.participants', compact(
         'quiz', 
         'participants', 
-        'activeParticipants', 
+        'activeParticipants',
         'inProgressUsers',
+        'lobbyUsers',
         'completedParticipants',
-        'lobbyUsers'
+        'leftParticipants',
+        'isQuizStarted',
+        'hasQuestions'
     ));
 }
+    
+    /**
+     * Remove a participant from the lobby
+     */
+    public function removeParticipant($participantId)
+    {
+        try {
+            $participant = QuizParticipant::find($participantId);
+            
+            if (!$participant) {
+                return response()->json(['success' => false, 'message' => 'Participant not found'], 404);
+            }
+            
+            $participant->delete();
+            
+            return response()->json(['success' => true, 'message' => 'Participant removed successfully']);
+            
+        } catch (\Exception $e) {
+            Log::error('Error removing participant: ' . $e->getMessage());
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+    
+    /**
+     * Update quiz totals (points and question count)
+     */
+    private function updateQuizTotals(Quiz $quiz)
+    {
+        $totalPoints = $quiz->questions()->sum('points');
+        $totalQuestions = $quiz->questions()->count();
+        
+        $quiz->update([
+            'total_points' => $totalPoints,
+            'total_questions' => $totalQuestions
+        ]);
+    }
 }

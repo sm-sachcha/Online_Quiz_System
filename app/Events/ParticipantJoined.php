@@ -4,7 +4,6 @@ namespace App\Events;
 
 use App\Models\User;
 use App\Models\Quiz;
-use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
@@ -15,12 +14,12 @@ class ParticipantJoined implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public $user;
+    public $participant;
     public $quiz;
 
-    public function __construct(User $user, Quiz $quiz)
+    public function __construct($participant, Quiz $quiz)
     {
-        $this->user = $user;
+        $this->participant = $participant;
         $this->quiz = $quiz;
     }
 
@@ -37,9 +36,11 @@ class ParticipantJoined implements ShouldBroadcast
     public function broadcastWith()
     {
         return [
-            'user' => [
-                'id' => $this->user->id,
-                'name' => $this->user->name,
+            'participant' => [
+                'id' => $this->participant->id ?? null,
+                'user_id' => $this->participant->user_id ?? null,
+                'name' => $this->participant->guest_name ?? ($this->participant->name ?? 'Guest'),
+                'is_guest' => !isset($this->participant->user_id) || !$this->participant->user_id,
                 'joined_at' => now()
             ]
         ];

@@ -17,6 +17,7 @@ return new class extends Migration
             $table->integer('time_seconds')->default(30);
             $table->integer('order')->default(0);
             $table->text('explanation')->nullable();
+            $table->boolean('show_answer')->default(false); 
             $table->json('metadata')->nullable();
             $table->boolean('is_active')->default(true);
             $table->foreignId('created_by')->constrained('users');

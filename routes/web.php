@@ -44,29 +44,35 @@ Route::middleware('auth')->group(function () {
     Route::put('profile', [ProfileController::class, 'update'])->name('profile.update');
 });
 
-// ==================== USER ROUTES ====================
-Route::middleware(['auth', 'role:user'])->prefix('user')->name('user.')->group(function () {
+// ==================== USER QUIZ ROUTES (Guest accessible for public quizzes) ====================
+Route::prefix('user/quiz')->name('user.quiz.')->group(function () {
+    // Lobby routes
+    Route::get('lobby/{quiz}', [QuizLobbyController::class, 'index'])->name('lobby');
+    Route::post('lobby/{quiz}/join', [QuizLobbyController::class, 'join'])->name('join');
+    Route::post('lobby/{quiz}/leave', [QuizLobbyController::class, 'leave'])->name('leave');
+    Route::get('lobby/{quiz}/participants', [QuizLobbyController::class, 'participants'])->name('participants');
+    Route::post('lobby/{quiz}/heartbeat', [QuizLobbyController::class, 'heartbeat'])->name('lobby-heartbeat');
+    
+    // Quiz status route
+    Route::get('{quiz}/status', [QuizAttemptController::class, 'getQuizStatus'])->name('status');
+    
+    // Quiz attempt routes
+    Route::get('start/{quiz}', [QuizAttemptController::class, 'start'])->name('start');
+    Route::get('attempt/{quiz}/{attempt}', [QuizAttemptController::class, 'attempt'])->name('attempt');
+    Route::post('attempt/{quiz}/{attempt}/submit', [QuizAttemptController::class, 'submitAnswer'])->name('submit');
+    Route::post('attempt/{quiz}/{attempt}/submit-multiple', [QuizAttemptController::class, 'submitMultipleAnswer'])->name('submit-multiple');
+    Route::post('attempt/{quiz}/{attempt}/finish', [QuizAttemptController::class, 'finish'])->name('finish');
+    Route::post('attempt/{quiz}/{attempt}/heartbeat', [QuizAttemptController::class, 'heartbeat'])->name('attempt-heartbeat');
+    Route::post('attempt/{quiz}/{attempt}/leave', [QuizAttemptController::class, 'leaveQuiz'])->name('leave-attempt');
+    Route::get('result/{quiz}/{attempt}', [ResultController::class, 'show'])->name('result');
+});
+
+// ==================== USER AUTHENTICATED ROUTES ====================
+Route::middleware(['auth'])->prefix('user')->name('user.')->group(function () {
     Route::get('dashboard', [UserDashboardController::class, 'index'])->name('dashboard');
     Route::get('results', [ResultController::class, 'history'])->name('results');
     Route::get('certificate/{attempt}', [ResultController::class, 'certificate'])->name('certificate');
-    
-    Route::prefix('quiz')->name('quiz.')->group(function () {
-        Route::get('lobby/{quiz}', [QuizLobbyController::class, 'index'])->name('lobby');
-        Route::post('lobby/{quiz}/join', [QuizLobbyController::class, 'join'])->name('join');
-        Route::post('lobby/{quiz}/leave', [QuizLobbyController::class, 'leave'])->name('leave');
-        Route::get('lobby/{quiz}/participants', [QuizLobbyController::class, 'participants'])->name('participants');
-        Route::post('lobby/{quiz}/heartbeat', [QuizLobbyController::class, 'heartbeat'])->name('heartbeat');
-        
-        Route::get('start/{quiz}', [QuizAttemptController::class, 'start'])->name('start');
-        Route::get('attempt/{quiz}/{attempt}', [QuizAttemptController::class, 'attempt'])->name('attempt');
-        Route::post('attempt/{quiz}/{attempt}/submit', [QuizAttemptController::class, 'submitAnswer'])->name('submit');
-        Route::post('attempt/{quiz}/{attempt}/submit-multiple', [QuizAttemptController::class, 'submitMultipleAnswer'])->name('submit-multiple');
-        Route::post('attempt/{quiz}/{attempt}/finish', [QuizAttemptController::class, 'finish'])->name('finish');
-        
-        Route::get('result/{quiz}/{attempt}', [ResultController::class, 'show'])->name('result');
-        Route::get('attempts/{quiz}', [QuizAttemptController::class, 'attempts'])->name('attempts');
-        
-    });
+    Route::get('quiz/attempts/{quiz}', [QuizAttemptController::class, 'attempts'])->name('quiz.attempts');
 });
 
 // ==================== ADMIN ROUTES ====================
@@ -86,6 +92,13 @@ Route::middleware(['auth', 'role:admin,master_admin'])->prefix('admin')->name('a
     Route::post('quizzes/{quiz}/duplicate', [AdminQuizController::class, 'duplicate'])->name('quizzes.duplicate');
     Route::post('quizzes/{quiz}/toggle-publish', [AdminQuizController::class, 'togglePublish'])->name('quizzes.toggle-publish');
     Route::get('quizzes/{quiz}/participants', [AdminQuizController::class, 'participants'])->name('quizzes.participants');
+    Route::post('quiz-participants/{participant}/remove', [AdminQuizController::class, 'removeParticipant'])->name('quiz-participants.remove');
+        
+    // Quiz Start/Quit Routes
+    Route::post('quizzes/{quiz}/start', [AdminQuizController::class, 'startQuiz'])->name('quizzes.start');
+    Route::post('quizzes/{quiz}/quit', [AdminQuizController::class, 'quitQuiz'])->name('quizzes.quit');
+    Route::get('quizzes/{quiz}/participants-json', [AdminQuizController::class, 'getParticipants'])->name('quizzes.participants-json');
+    Route::get('quizzes/{quiz}/status', [AdminQuizController::class, 'getQuizStatus'])->name('quizzes.status');
     
     // Questions
     Route::prefix('quizzes/{quiz}/questions')->name('quizzes.questions.')->group(function () {
@@ -112,7 +125,7 @@ Route::middleware(['auth', 'role:admin,master_admin'])->prefix('admin')->name('a
         Route::get('export-activity', [ReportController::class, 'exportUserActivity'])->name('export-activity');
     });
     
-    // Results (if controller exists)
+    // Results
     Route::prefix('results')->name('results.')->group(function () {
         Route::get('/', [AdminResultController::class, 'index'])->name('index');
         Route::get('{attempt}', [AdminResultController::class, 'show'])->name('show');

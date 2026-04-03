@@ -6,14 +6,16 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    public function up()
+    public function up(): void
     {
         Schema::table('questions', function (Blueprint $table) {
-            $table->boolean('show_answer')->default(true)->after('explanation');
+            if (!Schema::hasColumn('questions', 'show_answer')) {
+                $table->boolean('show_answer')->default(false)->after('explanation');
+            }
         });
     }
 
-    public function down()
+    public function down(): void
     {
         Schema::table('questions', function (Blueprint $table) {
             $table->dropColumn('show_answer');

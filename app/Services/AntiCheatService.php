@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\UserAnswer;
 use App\Models\QuizAttempt;
+use Illuminate\Support\Facades\Log;
 
 class AntiCheatService
 {
@@ -12,26 +13,36 @@ class AntiCheatService
         $cheatingScore = 0;
         $attempt = $answer->quizAttempt;
         
+        // Skip for guest users if needed
+        if (!$attempt->user_id) {
+            return 0;
+        }
+        
+        // Check answer time (too fast = suspicious)
         if ($answer->time_taken_seconds < 2) {
             $cheatingScore += 0.3;
         }
         
+        // Check for pattern of correct answers (all correct = suspicious)
         $correctAnswersCount = UserAnswer::where('quiz_attempt_id', $attempt->id)
             ->where('is_correct', true)
             ->count();
         
         $totalAnswers = UserAnswer::where('quiz_attempt_id', $attempt->id)->count();
         
-        if ($totalAnswers > 0 && $correctAnswersCount / $totalAnswers > 0.9) {
+        if ($totalAnswers > 3 && $correctAnswersCount / $totalAnswers > 0.9) {
             $cheatingScore += 0.2;
         }
         
-        $attemptsFromIp = QuizAttempt::where('ip_address', $attempt->ip_address)
-            ->where('quiz_id', $attempt->quiz_id)
-            ->count();
-        
-        if ($attemptsFromIp > 3) {
-            $cheatingScore += 0.2;
+        // Check IP address for multiple attempts (only if IP exists)
+        if ($attempt->ip_address) {
+            $attemptsFromIp = QuizAttempt::where('ip_address', $attempt->ip_address)
+                ->where('quiz_id', $attempt->quiz_id)
+                ->count();
+            
+            if ($attemptsFromIp > 3) {
+                $cheatingScore += 0.2;
+            }
         }
         
         return min($cheatingScore, 1.0);
