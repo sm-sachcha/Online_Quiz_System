@@ -16,6 +16,7 @@ use App\Events\UserDisconnected;
 use App\Events\ParticipantLeft;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class QuizAttemptController extends Controller
@@ -36,30 +37,30 @@ class QuizAttemptController extends Controller
     {
         $user = Auth::user();
         $hasCompleted = false;
+        $completedAttempts = 0;
         
         if ($user) {
-            $hasCompleted = QuizAttempt::where('user_id', $user->id)
+            $completedAttempts = QuizAttempt::where('user_id', $user->id)
                 ->where('quiz_id', $quiz->id)
                 ->where('status', 'completed')
-                ->exists();
+                ->count();
+            $hasCompleted = $completedAttempts > 0 && $quiz->max_attempts > 0 && $completedAttempts >= $quiz->max_attempts;
         }
         
-        $hasInProgressAttempts = QuizAttempt::where('quiz_id', $quiz->id)
-            ->where('status', 'in_progress')
-            ->exists();
-        
-        $quizStartedByAdmin = $quiz->is_published && $quiz->scheduled_at && $quiz->scheduled_at <= now();
-        $quizAlreadyStarted = $hasInProgressAttempts || $quizStartedByAdmin;
+        $quizStartedByAdmin = $quiz->is_published
+            && $quiz->scheduled_at
+            && $quiz->scheduled_at <= now()
+            && (!$quiz->ends_at || $quiz->ends_at > now());
         
         return response()->json([
-            'is_started' => $quizAlreadyStarted && !$hasCompleted,
+            'is_started' => $quizStartedByAdmin && !$hasCompleted,
             'has_completed' => $hasCompleted,
             'is_published' => $quiz->is_published,
             'scheduled_at' => $quiz->scheduled_at,
             'ends_at' => $quiz->ends_at,
             'has_questions' => $quiz->questions()->count() > 0,
             'total_questions' => $quiz->questions()->count(),
-            'message' => $hasCompleted ? 'You have already completed this quiz.' : null
+            'message' => $hasCompleted ? 'You have already used all attempts for this quiz.' : null
         ]);
     }
 
@@ -79,16 +80,16 @@ class QuizAttemptController extends Controller
             $participant = null;
             $guestName = null;
             
-            // CHECK IF USER HAS ALREADY COMPLETED THE QUIZ
+            // CHECK IF USER HAS REACHED MAX ATTEMPTS
             if ($userId) {
-                $hasCompleted = QuizAttempt::where('user_id', $userId)
+                $completedAttempts = QuizAttempt::where('user_id', $userId)
                     ->where('quiz_id', $quiz->id)
                     ->where('status', 'completed')
-                    ->exists();
+                    ->count();
                 
-                if ($hasCompleted) {
+                if ($quiz->max_attempts > 0 && $completedAttempts >= $quiz->max_attempts) {
                     return redirect()->route('user.dashboard')
-                        ->with('error', 'You have already completed this quiz. You cannot start a new attempt.');
+                        ->with('error', 'You have reached the maximum number of attempts (' . $quiz->max_attempts . ') for this quiz.');
                 }
             }
             
@@ -144,6 +145,7 @@ class QuizAttemptController extends Controller
     private function handleGuestParticipant(Quiz $quiz)
     {
         $guestName = session('guest_name');
+        $sessionId = session()->getId();
         
         if (!$guestName) {
             return redirect()->route('user.quiz.lobby', $quiz)
@@ -151,13 +153,14 @@ class QuizAttemptController extends Controller
         }
         
         $participant = QuizParticipant::where('quiz_id', $quiz->id)
-            ->where('guest_name', $guestName)
             ->where('is_guest', true)
+            ->where('session_id', $sessionId)
             ->first();
         
         if (!$participant) {
             $participant = QuizParticipant::create([
                 'quiz_id' => $quiz->id,
+                'session_id' => $sessionId,
                 'guest_name' => $guestName,
                 'is_guest' => true,
                 'status' => 'joined',
@@ -262,8 +265,8 @@ class QuizAttemptController extends Controller
     {
         $user = Auth::user();
         $userId = $user ? $user->id : null;
-        
-        if ($userId && $attempt->user_id !== $userId) {
+
+        if (!$this->attemptBelongsToCurrentParticipant($quiz, $attempt)) {
             abort(403);
         }
         
@@ -314,7 +317,10 @@ class QuizAttemptController extends Controller
 
     private function checkTimeExpiry(Quiz $quiz, QuizAttempt $attempt)
     {
-        $timeLimit = $attempt->started_at->addMinutes($quiz->duration_minutes);
+        $timeLimit = $quiz->ends_at
+            ?? ($quiz->scheduled_at
+                ? $quiz->scheduled_at->copy()->addMinutes($quiz->duration_minutes)
+                : $attempt->started_at->copy()->addMinutes($quiz->duration_minutes));
         
         if ($timeLimit < now()) {
             $this->autoSubmitRemainingQuestions($attempt, $quiz);
@@ -338,33 +344,42 @@ class QuizAttemptController extends Controller
 
     private function getNextQuestion(Quiz $quiz, QuizAttempt $attempt)
     {
-        $allQuestions = $quiz->questions()->orderBy('order')->get();
+        $allQuestions = $quiz->questions()->with('options')->orderBy('order')->get();
         
         if ($allQuestions->isEmpty()) {
             return ['is_completed' => true, 'error' => 'This quiz has no questions.'];
         }
-        
+        $totalQuestions = $allQuestions->count();
+        $answeredCount = $attempt->answers()->count();
         $answeredQuestionIds = $attempt->answers()->pluck('question_id')->toArray();
-        
+
         $currentQuestion = null;
-        $answeredCount = 0;
-        
+
         foreach ($allQuestions as $question) {
-            if (!in_array($question->id, $answeredQuestionIds)) {
+            if (!in_array($question->id, $answeredQuestionIds, true)) {
                 $currentQuestion = $question;
                 break;
             }
-            $answeredCount++;
         }
-        
-        $totalQuestions = $allQuestions->count();
-        $isCompleted = $currentQuestion === null;
-        
+
+        if (!$currentQuestion) {
+            return [
+                'currentQuestion' => null,
+                'currentQuestionNumber' => $totalQuestions,
+                'remainingTimeSeconds' => 0,
+                'answeredCount' => $answeredCount,
+                'totalQuestions' => $totalQuestions,
+                'is_completed' => true
+            ];
+        }
+
         return [
             'currentQuestion' => $currentQuestion,
+            'currentQuestionNumber' => $answeredCount + 1,
+            'remainingTimeSeconds' => (int) $currentQuestion->time_seconds,
             'answeredCount' => $answeredCount,
             'totalQuestions' => $totalQuestions,
-            'is_completed' => $isCompleted
+            'is_completed' => false
         ];
     }
 
@@ -374,6 +389,8 @@ class QuizAttemptController extends Controller
             'status' => 'completed',
             'ended_at' => now()
         ]);
+
+        $this->clearGuestLobbyIdentityIfNeeded($attempt);
         
         $this->markParticipantLeft($quiz, $attempt);
         $this->leaderboardService->updateLeaderboard($quiz);
@@ -412,12 +429,12 @@ class QuizAttemptController extends Controller
     {
         $request->validate([
             'question_id' => 'required|exists:questions,id',
-            'option_id' => 'required|exists:options,id',
+            'option_id' => 'nullable|exists:options,id',
             'time_taken' => 'required|integer|min:0',
             'question_type' => 'required|string'
         ]);
 
-        if ($attempt->user_id !== Auth::id()) {
+        if (!$this->attemptBelongsToCurrentParticipant($quiz, $attempt)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -426,12 +443,6 @@ class QuizAttemptController extends Controller
                 'error' => 'This attempt is already completed',
                 'redirect_url' => route('user.quiz.result', ['quiz' => $quiz->id, 'attempt' => $attempt->id])
             ], 400);
-        }
-
-        // Check if already answered this question
-        $existingAnswer = $attempt->answers()->where('question_id', $request->question_id)->first();
-        if ($existingAnswer) {
-            return response()->json(['error' => 'Question already answered'], 400);
         }
 
         try {
@@ -453,6 +464,8 @@ class QuizAttemptController extends Controller
                     'status' => 'completed',
                     'ended_at' => now()
                 ]);
+
+                $this->clearGuestLobbyIdentityIfNeeded($attempt);
                 
                 // IMPORTANT: Update participant status to 'completed' so they disappear from lobby
                 QuizParticipant::where('quiz_id', $quiz->id)
@@ -488,6 +501,15 @@ class QuizAttemptController extends Controller
                 'message' => $isCompleted ? 'Quiz completed! Redirecting to results...' : 'Answer submitted successfully!'
             ]);
         } catch (\Exception $e) {
+            if (in_array($e->getMessage(), ['Question already answered', 'This attempt is already completed'], true)) {
+                return response()->json([
+                    'error' => $e->getMessage(),
+                    'redirect_url' => $e->getMessage() === 'This attempt is already completed'
+                        ? route('user.quiz.result', ['quiz' => $quiz->id, 'attempt' => $attempt->id])
+                        : null,
+                ], 400);
+            }
+
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
@@ -501,7 +523,7 @@ class QuizAttemptController extends Controller
             'question_type' => 'required|string'
         ]);
 
-        if ($attempt->user_id !== Auth::id()) {
+        if (!$this->attemptBelongsToCurrentParticipant($quiz, $attempt)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -512,38 +534,81 @@ class QuizAttemptController extends Controller
             ], 400);
         }
 
-        $existingAnswer = $attempt->answers()->where('question_id', $request->question_id)->first();
-        if ($existingAnswer) {
-            return response()->json(['error' => 'Question already answered'], 400);
-        }
-
         try {
             $selectedOptions = json_decode($request->selected_options, true);
-            $question = Question::with('options')->findOrFail($request->question_id);
-            
-            $correctOptions = $question->options->where('is_correct', true)->pluck('id')->toArray();
-            
-            sort($selectedOptions);
-            sort($correctOptions);
-            $isCorrect = ($selectedOptions == $correctOptions);
-            $pointsEarned = $isCorrect ? $question->points : 0;
-            
-            $answer = UserAnswer::create([
-                'quiz_attempt_id' => $attempt->id,
-                'question_id' => $request->question_id,
-                'answer_text' => json_encode($selectedOptions),
-                'is_correct' => $isCorrect,
-                'points_earned' => $pointsEarned,
-                'time_taken_seconds' => $request->time_taken
-            ]);
-            
-            $attempt->score += $pointsEarned;
-            if ($isCorrect) {
-                $attempt->correct_answers++;
-            } else {
-                $attempt->incorrect_answers++;
+            if (!is_array($selectedOptions)) {
+                return response()->json(['error' => 'Invalid selected options'], 422);
             }
-            $attempt->save();
+
+            $result = DB::transaction(function () use ($attempt, $request, $selectedOptions) {
+                $lockedAttempt = QuizAttempt::whereKey($attempt->id)->lockForUpdate()->firstOrFail();
+
+                if ($lockedAttempt->status !== 'in_progress') {
+                    return [
+                        'type' => 'completed',
+                        'redirect_url' => route('user.quiz.result', ['quiz' => $lockedAttempt->quiz_id, 'attempt' => $lockedAttempt->id]),
+                    ];
+                }
+
+                $existingAnswer = UserAnswer::where('quiz_attempt_id', $lockedAttempt->id)
+                    ->where('question_id', $request->question_id)
+                    ->first();
+
+                if ($existingAnswer) {
+                    return ['type' => 'duplicate'];
+                }
+
+                $question = Question::with('options')
+                    ->where('quiz_id', $lockedAttempt->quiz_id)
+                    ->findOrFail($request->question_id);
+
+                $correctOptions = $question->options->where('is_correct', true)->pluck('id')->toArray();
+                $selectedSorted = $selectedOptions;
+                $correctSorted = $correctOptions;
+                sort($selectedSorted);
+                sort($correctSorted);
+
+                $isCorrect = ($selectedSorted == $correctSorted);
+                $pointsEarned = $isCorrect ? $question->points : 0;
+
+                $answer = UserAnswer::create([
+                    'quiz_attempt_id' => $lockedAttempt->id,
+                    'question_id' => $request->question_id,
+                    'answer_text' => json_encode(array_values($selectedOptions)),
+                    'is_correct' => $isCorrect,
+                    'points_earned' => $pointsEarned,
+                    'time_taken_seconds' => $request->time_taken
+                ]);
+
+                if ($isCorrect) {
+                    $lockedAttempt->correct_answers++;
+                } else {
+                    $lockedAttempt->incorrect_answers++;
+                }
+
+                $lockedAttempt->score += $pointsEarned;
+                $lockedAttempt->save();
+
+                return [
+                    'type' => 'success',
+                    'answer' => $answer,
+                    'attempt' => $lockedAttempt->fresh(),
+                ];
+            });
+
+            if ($result['type'] === 'duplicate') {
+                return response()->json(['error' => 'Question already answered'], 400);
+            }
+
+            if ($result['type'] === 'completed') {
+                return response()->json([
+                    'error' => 'This attempt is already completed',
+                    'redirect_url' => $result['redirect_url'],
+                ], 400);
+            }
+
+            $answer = $result['answer'];
+            $attempt = $result['attempt'];
             
             broadcast(new AnswerSubmitted($answer))->toOthers();
             
@@ -556,6 +621,8 @@ class QuizAttemptController extends Controller
                     'status' => 'completed',
                     'ended_at' => now()
                 ]);
+
+                $this->clearGuestLobbyIdentityIfNeeded($attempt);
                 
                 // IMPORTANT: Update participant status to 'completed'
                 QuizParticipant::where('quiz_id', $quiz->id)
@@ -572,8 +639,8 @@ class QuizAttemptController extends Controller
             
             return response()->json([
                 'success' => true,
-                'is_correct' => $isCorrect,
-                'points_earned' => $pointsEarned,
+                'is_correct' => $answer->is_correct,
+                'points_earned' => $answer->points_earned,
                 'current_score' => $attempt->score,
                 'is_completed' => $isCompleted,
                 'answered_count' => $answeredCount,
@@ -588,7 +655,7 @@ class QuizAttemptController extends Controller
 
     public function finish(Quiz $quiz, QuizAttempt $attempt)
     {
-        if ($attempt->user_id !== Auth::id()) {
+        if (!$this->attemptBelongsToCurrentParticipant($quiz, $attempt)) {
             abort(403);
         }
 
@@ -621,6 +688,8 @@ class QuizAttemptController extends Controller
             'status' => 'completed',
             'ended_at' => now()
         ]);
+
+        $this->clearGuestLobbyIdentityIfNeeded($attempt);
         
         // IMPORTANT: Update participant status to 'completed'
         QuizParticipant::where('quiz_id', $quiz->id)
@@ -677,8 +746,8 @@ class QuizAttemptController extends Controller
     {
         $user = Auth::user();
         $userId = $user ? $user->id : null;
-        
-        if ($userId && $attempt->user_id !== $userId) {
+
+        if (!$this->attemptBelongsToCurrentParticipant($quiz, $attempt)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -697,7 +766,7 @@ class QuizAttemptController extends Controller
         $user = Auth::user();
         $userId = $user ? $user->id : null;
         
-        if ($userId && $attempt->user_id !== $userId) {
+        if (!$this->attemptBelongsToCurrentParticipant($quiz, $attempt)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         
@@ -754,5 +823,57 @@ class QuizAttemptController extends Controller
             'inProgressAttempt',
             'abandonedAttempt'
         ));
+    }
+
+    private function findGuestParticipantBySession(Quiz $quiz): ?QuizParticipant
+    {
+        $participant = QuizParticipant::where('quiz_id', $quiz->id)
+            ->where('is_guest', true)
+            ->where('session_id', session()->getId())
+            ->first();
+
+        if ($participant) {
+            return $participant;
+        }
+
+        $guestName = session('guest_name');
+        if (!$guestName) {
+            return null;
+        }
+
+        return QuizParticipant::where('quiz_id', $quiz->id)
+            ->where('is_guest', true)
+            ->whereNull('session_id')
+            ->where('guest_name', $guestName)
+            ->first();
+    }
+
+    private function clearGuestLobbyIdentityIfNeeded(QuizAttempt $attempt): void
+    {
+        if ($attempt->user_id !== null || !$attempt->participant_id) {
+            return;
+        }
+
+        session([
+            'guest_participant_id' => $attempt->participant_id,
+        ]);
+
+        session()->forget('guest_name');
+    }
+
+    private function attemptBelongsToCurrentParticipant(Quiz $quiz, QuizAttempt $attempt): bool
+    {
+        $userId = Auth::id();
+        if ($userId) {
+            return (int) $attempt->user_id === (int) $userId;
+        }
+
+        if (!$attempt->participant_id) {
+            return false;
+        }
+
+        $participant = $this->findGuestParticipantBySession($quiz);
+
+        return $participant && (int) $participant->id === (int) $attempt->participant_id;
     }
 }

@@ -132,7 +132,7 @@
 <div class="row mb-3">
     <div class="col-md-8">
         <h3><i class="fas fa-question-circle"></i> {{ $quiz->title }}</h3>
-        <p class="text-muted">Question <strong id="currentQuestionNum">{{ $answeredCount + 1 }}</strong> of <strong>{{ $totalQuestions }}</strong></p>
+        <p class="text-muted">Question <strong id="currentQuestionNum">{{ $currentQuestionNumber }}</strong> of <strong>{{ $totalQuestions }}</strong></p>
     </div>
     <div class="col-md-4 text-end">
         <span class="badge bg-primary fs-5 p-2 me-2">
@@ -241,7 +241,7 @@
                 </div>
                 <div class="d-flex justify-content-between">
                     <span>Time Limit:</span>
-                    <strong>{{ $currentQuestion->time_seconds }}s</strong>
+                    <strong>{{ $remainingTimeSeconds }}s</strong>
                 </div>
             </div>
         </div>
@@ -269,14 +269,16 @@
     const attemptId = {{ $attempt->id }};
     const questionId = {{ $currentQuestion->id }};
     const questionType = '{{ $currentQuestion->question_type }}';
-    const timeSeconds = {{ $currentQuestion->time_seconds }};
+    const timeSeconds = {{ (int) $remainingTimeSeconds }};
+    const questionDuration = {{ (int) $currentQuestion->time_seconds }};
     const showAnswer = {{ $currentQuestion->show_answer ? 'true' : 'false' }};
     const isMultipleChoice = questionType === 'multiple_choice';
     
-    let timeLeft = timeSeconds;
+    let timeLeft = parseInt(timeSeconds, 10);
     let timerInterval;
     let answerSubmitted = false;
     let startTime = Date.now();
+    let isInternalNavigation = false;
     let selectedOptions = [];
     let heartbeatInterval;
     let selectedOptionId = null;
@@ -297,7 +299,8 @@
     function submitAnswerOnTimerEnd() {
         if (answerSubmitted) return;
         
-        const timeTaken = Math.min(Math.floor((Date.now() - startTime) / 1000), timeSeconds);
+        const elapsedSincePageLoad = Math.floor((Date.now() - startTime) / 1000);
+        const timeTaken = Math.min((parseInt(questionDuration, 10) - parseInt(timeSeconds, 10)) + elapsedSincePageLoad, parseInt(questionDuration, 10));
         document.getElementById('timeTaken').value = timeTaken;
         
         setFormValues();
@@ -325,6 +328,7 @@
                 updateUI(data);
             } else if (data.redirect_url) {
                 // Attempt already completed, redirect to results
+                isInternalNavigation = true;
                 window.location.href = data.redirect_url;
             } else {
                 alert('Error: ' + (data.error || 'Unknown error'));
@@ -343,7 +347,7 @@
         updateTimerDisplay();
         timerInterval = setInterval(() => {
             if (!answerSubmitted) {
-                timeLeft--;
+                timeLeft = Math.max(0, parseInt(timeLeft, 10) - 1);
                 updateTimerDisplay();
                 if (timeLeft <= 0) {
                     clearInterval(timerInterval);
@@ -354,12 +358,13 @@
     }
 
     function updateTimerDisplay() {
-        const minutes = Math.floor(Math.max(0, timeLeft) / 60);
-        const seconds = Math.max(0, timeLeft) % 60;
+        const safeTimeLeft = Math.max(0, parseInt(timeLeft, 10) || 0);
+        const minutes = Math.floor(safeTimeLeft / 60);
+        const seconds = safeTimeLeft % 60;
         const timerEl = document.getElementById('timer');
         if (timerEl) {
             timerEl.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-            if (timeLeft < 10 && timeLeft > 0) {
+            if (safeTimeLeft < 10 && safeTimeLeft > 0) {
                 timerEl.classList.add('timer-danger');
             } else {
                 timerEl.classList.remove('timer-danger');
@@ -428,6 +433,7 @@
     function loadNextQuestion() {
         showNextQuestionLoader();
         setTimeout(() => {
+            isInternalNavigation = true;
             window.location.reload();
         }, 1500);
     }
@@ -505,6 +511,7 @@
         
         if (data.is_completed) {
             setTimeout(() => {
+                isInternalNavigation = true;
                 window.location.href = `/user/quiz/result/${quizId}/${attemptId}`;
             }, 2000);
         } else {
@@ -567,6 +574,10 @@
     window.addEventListener('beforeunload', function() {
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         if (timerInterval) clearInterval(timerInterval);
+
+        if (answerSubmitted || isInternalNavigation) {
+            return;
+        }
         
         fetch(`/user/quiz/attempt/${quizId}/${attemptId}/leave`, {
             method: 'POST',

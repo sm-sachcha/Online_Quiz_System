@@ -49,7 +49,7 @@
                                             @endif
                                         </td>
                                         <td>
-                                            <a href="{{ route('user.quiz.result', ['quiz' => $item['attempt_id'], 'attempt' => $item['attempt_id']]) }}" 
+                                            <a href="{{ route('user.quiz.result', ['quiz' => $item['quiz_id'], 'attempt' => $item['attempt_id']]) }}" 
                                                class="btn btn-sm btn-info">
                                                 <i class="fas fa-eye"></i> View Details
                                             </a>

@@ -10,7 +10,7 @@ class QuizParticipant extends Model
     use HasFactory;
 
     protected $fillable = [
-        'quiz_id', 'user_id', 'guest_name', 'device_id', 'is_guest', 
+        'quiz_id', 'user_id', 'session_id', 'guest_name', 'device_id', 'is_guest', 
         'status', 'joined_at', 'left_at'
     ];
 

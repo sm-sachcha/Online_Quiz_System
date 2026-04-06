@@ -25,6 +25,8 @@ public function startQuiz(Quiz $quiz, $userId = null, $participant = null)
         'user_id' => $userId,
         'has_participant' => !is_null($participant)
     ]);
+
+    $startedAt = now();
     
     // Get participant ID
     $participantId = null;
@@ -45,7 +47,7 @@ public function startQuiz(Quiz $quiz, $userId = null, $participant = null)
         'user_id' => $userId,
         'participant_id' => $participantId,
         'quiz_id' => $quiz->id,
-        'started_at' => now(),
+        'started_at' => $startedAt,
         'status' => 'in_progress',
         'total_questions' => $quiz->questions()->count(),
         'total_points' => $quiz->questions()->sum('points'),
@@ -112,65 +114,75 @@ public function startQuiz(Quiz $quiz, $userId = null, $participant = null)
      */
     public function submitAnswer(QuizAttempt $attempt, $questionId, $optionId, $timeTaken)
     {
-        $question = Question::with('options')->findOrFail($questionId);
-        
-        // Calculate if answer is correct
-        $isCorrect = false;
-        $pointsEarned = 0;
-        
-        if ($optionId && $optionId !== '') {
-            $selectedOption = $question->options()->find($optionId);
-            if ($selectedOption) {
-                $isCorrect = $selectedOption->is_correct;
-                $pointsEarned = $isCorrect ? $question->points : 0;
-            }
-        }
-        
-        Log::info('Submitting answer', [
-            'attempt_id' => $attempt->id,
-            'question_id' => $questionId,
-            'question_points' => $question->points,
-            'selected_option' => $optionId,
-            'is_correct' => $isCorrect,
-            'points_earned' => $pointsEarned,
-            'time_taken' => $timeTaken
-        ]);
-        
-        DB::beginTransaction();
         try {
-            // Create the answer record
-            $answer = UserAnswer::create([
-                'quiz_attempt_id' => $attempt->id,
-                'question_id' => $questionId,
-                'option_id' => $optionId ?: null,
-                'is_correct' => $isCorrect,
-                'points_earned' => $pointsEarned,
-                'time_taken_seconds' => $timeTaken
-            ]);
-            
-            // Update attempt totals
-            if ($isCorrect) {
-                $attempt->correct_answers++;
-            } else {
-                $attempt->incorrect_answers++;
-            }
-            
-            $attempt->score += $pointsEarned;
-            $attempt->total_points += $pointsEarned;
-            $attempt->save();
-            
-            Log::info('Answer submitted successfully', [
-                'attempt_id' => $attempt->id,
-                'new_score' => $attempt->score,
-                'correct_answers' => $attempt->correct_answers,
-                'incorrect_answers' => $attempt->incorrect_answers
-            ]);
-            
-            DB::commit();
-            
-            return $answer;
+            return DB::transaction(function () use ($attempt, $questionId, $optionId, $timeTaken) {
+                $lockedAttempt = QuizAttempt::whereKey($attempt->id)->lockForUpdate()->firstOrFail();
+
+                if ($lockedAttempt->status !== 'in_progress') {
+                    throw new \RuntimeException('This attempt is already completed');
+                }
+
+                $existingAnswer = UserAnswer::where('quiz_attempt_id', $lockedAttempt->id)
+                    ->where('question_id', $questionId)
+                    ->first();
+
+                if ($existingAnswer) {
+                    throw new \RuntimeException('Question already answered');
+                }
+
+                $question = Question::with('options')
+                    ->where('quiz_id', $lockedAttempt->quiz_id)
+                    ->findOrFail($questionId);
+
+                $isCorrect = false;
+                $pointsEarned = 0;
+
+                if ($optionId && $optionId !== '') {
+                    $selectedOption = $question->options()->find($optionId);
+                    if ($selectedOption) {
+                        $isCorrect = $selectedOption->is_correct;
+                        $pointsEarned = $isCorrect ? $question->points : 0;
+                    }
+                }
+
+                Log::info('Submitting answer', [
+                    'attempt_id' => $lockedAttempt->id,
+                    'question_id' => $questionId,
+                    'question_points' => $question->points,
+                    'selected_option' => $optionId,
+                    'is_correct' => $isCorrect,
+                    'points_earned' => $pointsEarned,
+                    'time_taken' => $timeTaken
+                ]);
+
+                $answer = UserAnswer::create([
+                    'quiz_attempt_id' => $lockedAttempt->id,
+                    'question_id' => $questionId,
+                    'option_id' => $optionId ?: null,
+                    'is_correct' => $isCorrect,
+                    'points_earned' => $pointsEarned,
+                    'time_taken_seconds' => $timeTaken
+                ]);
+
+                if ($isCorrect) {
+                    $lockedAttempt->correct_answers++;
+                } else {
+                    $lockedAttempt->incorrect_answers++;
+                }
+
+                $lockedAttempt->score += $pointsEarned;
+                $lockedAttempt->save();
+
+                Log::info('Answer submitted successfully', [
+                    'attempt_id' => $lockedAttempt->id,
+                    'new_score' => $lockedAttempt->score,
+                    'correct_answers' => $lockedAttempt->correct_answers,
+                    'incorrect_answers' => $lockedAttempt->incorrect_answers
+                ]);
+
+                return $answer;
+            });
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('Answer submission failed: ' . $e->getMessage());
             throw $e;
         }

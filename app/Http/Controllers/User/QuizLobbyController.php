@@ -33,7 +33,7 @@ class QuizLobbyController extends Controller
         // CHECK IF QUIZ HAS ENDED - Time is over
         $quizEnded = $quiz->ends_at && $quiz->ends_at < now();
         
-        // CHECK IF USER HAS ALREADY COMPLETED THE QUIZ
+        // CHECK IF USER HAS REACHED MAX ATTEMPTS
         $hasCompleted = false;
         $completedAttempt = null;
         
@@ -43,36 +43,34 @@ class QuizLobbyController extends Controller
                 ->where('status', 'completed')
                 ->latest()
                 ->first();
-            $hasCompleted = $completedAttempt ? true : false;
+            $completedAttempts = QuizAttempt::where('user_id', $user->id)
+                ->where('quiz_id', $quiz->id)
+                ->where('status', 'completed')
+                ->count();
+            $hasCompleted = $quiz->max_attempts > 0 && $completedAttempts >= $quiz->max_attempts;
         } else {
             $guestName = session('guest_name');
             if ($guestName) {
-                $participant = QuizParticipant::where('quiz_id', $quiz->id)
-                    ->where('guest_name', $guestName)
-                    ->where('is_guest', true)
-                    ->first();
+                $participant = $this->findGuestParticipantBySession($quiz);
                 if ($participant) {
                     $completedAttempt = QuizAttempt::where('participant_id', $participant->id)
                         ->where('status', 'completed')
                         ->latest()
                         ->first();
-                    $hasCompleted = $completedAttempt ? true : false;
+                    $completedAttempts = QuizAttempt::where('participant_id', $participant->id)
+                        ->where('quiz_id', $quiz->id)
+                        ->where('status', 'completed')
+                        ->count();
+                    $hasCompleted = $quiz->max_attempts > 0 && $completedAttempts >= $quiz->max_attempts;
                 }
             }
         }
         
-        // CHECK IF QUIZ HAS STARTED (any in_progress attempts OR admin started)
-        $hasInProgressAttempts = QuizAttempt::where('quiz_id', $quiz->id)
-            ->where('status', 'in_progress')
-            ->exists();
-        
-        // Check if quiz has been started by admin (scheduled_at passed)
-        $quizStartedByAdmin = $quiz->is_published && $quiz->scheduled_at && $quiz->scheduled_at <= now();
-        
-        // Quiz is considered started if either:
-        // 1. There are any in_progress attempts, OR
-        // 2. Admin has started the quiz (scheduled_at passed)
-        $quizAlreadyStarted = $hasInProgressAttempts || $quizStartedByAdmin;
+        $quizStartedByAdmin = $quiz->is_published
+            && $quiz->scheduled_at
+            && $quiz->scheduled_at <= now()
+            && !$quizEnded;
+        $quizAlreadyStarted = $quizStartedByAdmin;
         
         // Check if user already has an in-progress attempt (to allow resuming)
         $userHasInProgress = false;
@@ -87,10 +85,7 @@ class QuizLobbyController extends Controller
         } else {
             $guestName = session('guest_name');
             if ($guestName) {
-                $participant = QuizParticipant::where('quiz_id', $quiz->id)
-                    ->where('guest_name', $guestName)
-                    ->where('is_guest', true)
-                    ->first();
+                $participant = $this->findGuestParticipantBySession($quiz);
                 if ($participant) {
                     $inProgressAttempt = QuizAttempt::where('quiz_id', $quiz->id)
                         ->where('participant_id', $participant->id)
@@ -123,7 +118,7 @@ class QuizLobbyController extends Controller
             // Only allow participant creation if:
             // 1. User has an in-progress attempt (resume), OR
             // 2. Quiz hasn't started AND user has remaining attempts AND user hasn't completed AND quiz hasn't ended
-            if ((!$hasCompleted && $userHasInProgress) || (!$quizAlreadyStarted && $remainingAttempts > 0 && !$hasCompleted && !$quizEnded)) {
+            if (!$hasCompleted && !$quizEnded && ($userHasInProgress || $remainingAttempts > 0 || $quiz->max_attempts <= 0)) {
                 $participant = QuizParticipant::firstOrCreate(
                     ['quiz_id' => $quiz->id, 'user_id' => $user->id],
                     ['status' => 'joined', 'is_guest' => false, 'joined_at' => now()]
@@ -138,17 +133,15 @@ class QuizLobbyController extends Controller
                 }
             }
         } else {
-            // Guest user - can only join if quiz hasn't started, hasn't ended, and they haven't completed
+            // Guest user can stay associated with this quiz while it is active or while resuming an attempt
             $guestName = session('guest_name');
-            if ($guestName && !$quizAlreadyStarted && !$userHasInProgress && !$hasCompleted && !$quizEnded) {
-                $participant = QuizParticipant::where('quiz_id', $quiz->id)
-                    ->where('guest_name', $guestName)
-                    ->where('is_guest', true)
-                    ->first();
+            if ($guestName && !$hasCompleted && !$quizEnded) {
+                $participant = $this->findGuestParticipantBySession($quiz);
                 
                 if (!$participant) {
                     $participant = QuizParticipant::create([
                         'quiz_id' => $quiz->id,
+                        'session_id' => session()->getId(),
                         'guest_name' => $guestName,
                         'is_guest' => true,
                         'status' => 'joined',
@@ -235,23 +228,23 @@ class QuizLobbyController extends Controller
                 ], 403);
             }
             
-            // CHECK IF USER HAS ALREADY COMPLETED THE QUIZ
+            // CHECK IF USER HAS REACHED MAX ATTEMPTS
             $hasCompleted = false;
             if ($user) {
-                $hasCompleted = QuizAttempt::where('user_id', $user->id)
+                $completedAttempts = QuizAttempt::where('user_id', $user->id)
                     ->where('quiz_id', $quiz->id)
                     ->where('status', 'completed')
-                    ->exists();
+                    ->count();
+                $hasCompleted = $quiz->max_attempts > 0 && $completedAttempts >= $quiz->max_attempts;
             } else {
                 if ($guestName) {
-                    $participant = QuizParticipant::where('quiz_id', $quiz->id)
-                        ->where('guest_name', $guestName)
-                        ->where('is_guest', true)
-                        ->first();
+                    $participant = $this->findGuestParticipantBySession($quiz);
                     if ($participant) {
-                        $hasCompleted = QuizAttempt::where('participant_id', $participant->id)
+                        $completedAttempts = QuizAttempt::where('participant_id', $participant->id)
+                            ->where('quiz_id', $quiz->id)
                             ->where('status', 'completed')
-                            ->exists();
+                            ->count();
+                        $hasCompleted = $quiz->max_attempts > 0 && $completedAttempts >= $quiz->max_attempts;
                     }
                 }
             }
@@ -264,17 +257,15 @@ class QuizLobbyController extends Controller
                 ]);
                 return response()->json([
                     'success' => false, 
-                    'error' => 'You have already completed this quiz. You cannot join again.'
+                    'error' => 'You have reached the maximum number of attempts for this quiz.'
                 ], 403);
             }
             
-            // CHECK IF QUIZ HAS ALREADY STARTED
-            $hasInProgressAttempts = QuizAttempt::where('quiz_id', $quiz->id)
-                ->where('status', 'in_progress')
-                ->exists();
-            
-            $quizStartedByAdmin = $quiz->is_published && $quiz->scheduled_at && $quiz->scheduled_at <= now();
-            $quizAlreadyStarted = $hasInProgressAttempts || $quizStartedByAdmin;
+            $quizStartedByAdmin = $quiz->is_published
+                && $quiz->scheduled_at
+                && $quiz->scheduled_at <= now()
+                && (!$quiz->ends_at || $quiz->ends_at > now());
+            $quizAlreadyStarted = $quizStartedByAdmin;
             
             // Check if user already has an in-progress attempt (to allow resuming)
             $userHasInProgress = false;
@@ -286,10 +277,7 @@ class QuizLobbyController extends Controller
                     ->exists();
             } else {
                 if ($guestName) {
-                    $guestParticipant = QuizParticipant::where('quiz_id', $quiz->id)
-                        ->where('guest_name', $guestName)
-                        ->where('is_guest', true)
-                        ->first();
+                    $guestParticipant = $this->findGuestParticipantBySession($quiz);
                     if ($guestParticipant) {
                         $userHasInProgress = QuizAttempt::where('quiz_id', $quiz->id)
                             ->where('participant_id', $guestParticipant->id)
@@ -297,19 +285,6 @@ class QuizLobbyController extends Controller
                             ->exists();
                     }
                 }
-            }
-            
-            // If quiz has started and user doesn't have an in-progress attempt, BLOCK JOINING
-            if ($quizAlreadyStarted && !$userHasInProgress) {
-                Log::info('Blocked join attempt - quiz already started', [
-                    'quiz_id' => $quiz->id,
-                    'user_id' => $user ? $user->id : null,
-                    'guest_name' => $guestName
-                ]);
-                return response()->json([
-                    'success' => false, 
-                    'error' => 'This quiz has already started. You cannot join now.'
-                ], 403);
             }
             
             // For logged-in users, check remaining attempts
@@ -363,19 +338,18 @@ class QuizLobbyController extends Controller
                 session(['guest_name' => $guestName]);
                 
                 // Check if guest already exists
-                $participant = QuizParticipant::where('quiz_id', $quiz->id)
-                    ->where('guest_name', $guestName)
-                    ->where('is_guest', true)
-                    ->first();
+                $participant = $this->findGuestParticipantBySession($quiz);
                 
                 if ($participant) {
                     $participant->update([
+                        'guest_name' => $guestName,
                         'status' => 'joined',
                         'joined_at' => now()
                     ]);
                 } else {
                     $participant = QuizParticipant::create([
                         'quiz_id' => $quiz->id,
+                        'session_id' => session()->getId(),
                         'guest_name' => $guestName,
                         'is_guest' => true,
                         'status' => 'joined',
@@ -430,10 +404,7 @@ class QuizLobbyController extends Controller
             } else {
                 $guestName = session('guest_name');
                 if ($guestName) {
-                    $participant = QuizParticipant::where('quiz_id', $quiz->id)
-                        ->where('guest_name', $guestName)
-                        ->where('is_guest', true)
-                        ->first();
+                    $participant = $this->findGuestParticipantBySession($quiz);
                 }
             }
 
@@ -532,10 +503,7 @@ class QuizLobbyController extends Controller
             } else {
                 $guestName = session('guest_name');
                 if ($guestName) {
-                    $participant = QuizParticipant::where('quiz_id', $quiz->id)
-                        ->where('guest_name', $guestName)
-                        ->where('is_guest', true)
-                        ->first();
+                    $participant = $this->findGuestParticipantBySession($quiz);
                 }
             }
             
@@ -555,19 +523,20 @@ class QuizLobbyController extends Controller
     public function checkStatus(Quiz $quiz)
     {
         try {
-            $hasInProgressAttempts = QuizAttempt::where('quiz_id', $quiz->id)
-                ->where('status', 'in_progress')
-                ->exists();
-            
-            $quizStartedByAdmin = $quiz->is_published && $quiz->scheduled_at && $quiz->scheduled_at <= now();
-            $quizAlreadyStarted = $hasInProgressAttempts || $quizStartedByAdmin;
+            $quizStartedByAdmin = $quiz->is_published
+                && $quiz->scheduled_at
+                && $quiz->scheduled_at <= now()
+                && (!$quiz->ends_at || $quiz->ends_at > now());
+            $quizAlreadyStarted = $quizStartedByAdmin;
             $quizEnded = $quiz->ends_at && $quiz->ends_at < now();
             
             return response()->json([
                 'is_published' => $quiz->is_published,
                 'scheduled_at' => $quiz->scheduled_at,
                 'ends_at' => $quiz->ends_at,
-                'has_in_progress_attempts' => $hasInProgressAttempts,
+                'has_in_progress_attempts' => QuizAttempt::where('quiz_id', $quiz->id)
+                    ->where('status', 'in_progress')
+                    ->exists(),
                 'quiz_started_by_admin' => $quizStartedByAdmin,
                 'quiz_already_started' => $quizAlreadyStarted,
                 'quiz_ended' => $quizEnded
@@ -576,5 +545,28 @@ class QuizLobbyController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    private function findGuestParticipantBySession(Quiz $quiz): ?QuizParticipant
+    {
+        $participant = QuizParticipant::where('quiz_id', $quiz->id)
+            ->where('is_guest', true)
+            ->where('session_id', session()->getId())
+            ->first();
+
+        if ($participant) {
+            return $participant;
+        }
+
+        $guestName = session('guest_name');
+        if (!$guestName) {
+            return null;
+        }
+
+        return QuizParticipant::where('quiz_id', $quiz->id)
+            ->where('is_guest', true)
+            ->whereNull('session_id')
+            ->where('guest_name', $guestName)
+            ->first();
     }
 }

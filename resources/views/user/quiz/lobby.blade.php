@@ -303,11 +303,11 @@
                     </div>
                 @endif
                 
-                @if(isset($isQuizStarted) && $isQuizStarted && !isset($inProgressAttempt))
+                @if(isset($quizStartedByAdmin) && $quizStartedByAdmin && !isset($inProgressAttempt) && !isset($participant))
                     <div class="quiz-started-warning">
                         <i class="fas fa-ban fa-2x text-danger mb-2"></i>
                         <h4 class="text-danger">Quiz Already Started!</h4>
-                        <p class="mb-0">This quiz has already begun. You cannot join at this time.</p>
+                        <p class="mb-0">This quiz is live now. Join and start immediately.</p>
                         <a href="{{ route('user.dashboard') }}" class="btn btn-primary mt-3">
                             <i class="fas fa-home"></i> Back to Dashboard
                         </a>
@@ -419,11 +419,11 @@
                             </a>
                         </div>
                     </div>
-                @elseif(!isset($isQuizStarted) || !$isQuizStarted)
+                @else
                     <div class="text-center mt-4">
                         @if(Auth::check())
                             @php
-                                $remainingAttempts = $quiz->max_attempts - ($completedAttemptsCount ?? 0);
+                                $remainingAttempts = $remainingAttempts ?? ($quiz->max_attempts - ($completedAttemptsCount ?? 0));
                             @endphp
                             @if($remainingAttempts <= 0 && $quiz->max_attempts > 0)
                                 <button class="btn btn-secondary btn-lg" disabled>
@@ -432,22 +432,35 @@
                             @elseif(isset($inProgressAttempt) && $inProgressAttempt)
                                 <!-- Already showing resume button above -->
                             @elseif(isset($participant) && $participant && $participant->status === 'joined')
-                                <button class="waiting-btn" disabled>
-                                    <i class="fas fa-hourglass-half"></i> Waiting for Quiz to Start...
-                                </button>
-                                <p class="text-muted mt-2 small">The quiz will start when the administrator clicks "Start Quiz"</p>
+                                @if(isset($quizStartedByAdmin) && $quizStartedByAdmin)
+                                    <a href="{{ route('user.quiz.start', $quiz) }}" class="start-btn">
+                                        <i class="fas fa-play"></i> Start Quiz
+                                    </a>
+                                    <p class="text-muted mt-2 small">The quiz is live now. Start immediately.</p>
+                                @else
+                                    <button class="waiting-btn" disabled>
+                                        <i class="fas fa-hourglass-half"></i> Waiting for Quiz to Start...
+                                    </button>
+                                    <p class="text-muted mt-2 small">The quiz will start when the administrator clicks "Start Quiz"</p>
+                                @endif
                             @else
-                                <button class="join-btn" id="joinQuizBtn">
-                                    <i class="fas fa-sign-in-alt"></i> Join Lobby
-                                </button>
+                                @if(isset($quizStartedByAdmin) && $quizStartedByAdmin)
+                                    <a href="{{ route('user.quiz.start', $quiz) }}" class="start-btn">
+                                        <i class="fas fa-play"></i> Join And Start
+                                    </a>
+                                @else
+                                    <button class="join-btn" id="joinQuizBtn">
+                                        <i class="fas fa-sign-in-alt"></i> Join Lobby
+                                    </button>
+                                @endif
                             @endif
                         @elseif(isset($isPublicQuiz) && $isPublicQuiz)
                             <div class="mt-4 p-4 bg-light rounded" id="guestJoinSection">
-                                <h5><i class="fas fa-user-plus"></i> Join the Quiz</h5>
+                                <h5><i class="fas fa-user-plus"></i> {{ (isset($quizStartedByAdmin) && $quizStartedByAdmin) ? 'Join And Start Quiz' : 'Join the Quiz' }}</h5>
                                 <div class="guest-input-group">
                                     <input type="text" id="guestNameInput" class="guest-input" placeholder="Enter your name" autocomplete="off">
                                     <button id="directJoinBtn" class="guest-join-btn">
-                                        <i class="fas fa-sign-in-alt"></i> Join Lobby
+                                        <i class="fas fa-sign-in-alt"></i> {{ (isset($quizStartedByAdmin) && $quizStartedByAdmin) ? 'Join And Start' : 'Join Lobby' }}
                                     </button>
                                 </div>
                             </div>
@@ -490,7 +503,7 @@
 <script>
     const quizId = {{ $quiz->id }};
     const userId = {{ Auth::id() ?? 0 }};
-    const isQuizStarted = {{ isset($isQuizStarted) && $isQuizStarted ? 'true' : 'false' }};
+    const isQuizStarted = {{ isset($quizStartedByAdmin) && $quizStartedByAdmin ? 'true' : 'false' }};
     let participants = [];
     let hasLeft = false;
     let heartbeatInterval = null;
@@ -537,35 +550,11 @@
         });
     }
 
-    function startRedirectCountdown(seconds) {
-        if (redirectInterval || isRedirecting) return;
+    function redirectToQuizStart() {
+        if (isRedirecting) return;
         isRedirecting = true;
-        
-        let countdown = seconds;
-        
-        const overlay = document.createElement('div');
-        overlay.className = 'countdown-overlay';
-        overlay.innerHTML = `
-            <div class="countdown-container">
-                <div class="countdown-number" id="countdownNumber">${countdown}</div>
-                <div class="countdown-label">Quiz Starting!</div>
-                <div class="countdown-label" style="font-size: 14px; margin-top: 10px;">Redirecting to quiz...</div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-        
-        redirectInterval = setInterval(() => {
-            countdown--;
-            const numEl = document.getElementById('countdownNumber');
-            if (numEl) numEl.textContent = countdown;
-            
-            if (countdown <= 0) {
-                clearInterval(redirectInterval);
-                clearInterval(statusCheckInterval);
-                redirectInterval = null;
-                window.location.href = `/user/quiz/start/${quizId}`;
-            }
-        }, 1000);
+        if (statusCheckInterval) clearInterval(statusCheckInterval);
+        window.location.href = `/user/quiz/start/${quizId}`;
     }
 
     function checkQuizStatus() {
@@ -582,18 +571,13 @@
         .then(response => response.json())
         .then(data => {
             if (data.is_started === true && isJoined && !isRedirecting && !hasLeft) {
-                startRedirectCountdown(5);
+                redirectToQuizStart();
             }
         })
         .catch(error => console.error('Error checking quiz status:', error));
     }
 
     function joinLobby(guestName = null) {
-        if (isQuizStarted) {
-            alert('Quiz already started. You cannot join now.');
-            return;
-        }
-        
         const data = {};
         if (guestName) data.guest_name = guestName;
         
@@ -643,7 +627,11 @@
                 if (statusCheckInterval) clearInterval(statusCheckInterval);
                 statusCheckInterval = setInterval(checkQuizStatus, 2000);
                 
-                checkQuizStatus();
+                if (isQuizStarted) {
+                    redirectToQuizStart();
+                } else {
+                    checkQuizStatus();
+                }
                 
                 showNotification('Successfully joined the lobby!', 'success');
             } else {
@@ -877,7 +865,7 @@
         if (refreshInterval) clearInterval(refreshInterval);
         if (redirectInterval) clearInterval(redirectInterval);
         
-        if (isJoined && !hasLeft) {
+        if (isJoined && !hasLeft && !isRedirecting) {
             navigator.sendBeacon(`/user/quiz/lobby/${quizId}/leave`, new Blob([JSON.stringify({})], {type: 'application/json'}));
         }
     });

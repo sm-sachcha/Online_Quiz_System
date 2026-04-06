@@ -3,6 +3,16 @@
 @section('title', 'Quiz Participants - ' . $quiz->title)
 
 @section('content')
+@php
+    $participants = $payload['participants'] ?? collect();
+    $activeParticipants = $payload['activeParticipants'] ?? 0;
+    $takingQuizCount = $payload['takingQuizCount'] ?? 0;
+    $lobbyUsers = $payload['lobbyUsers'] ?? 0;
+    $completedParticipants = $payload['completedParticipants'] ?? 0;
+    $leftParticipants = $payload['leftParticipants'] ?? 0;
+    $isQuizStarted = $payload['isQuizStarted'] ?? false;
+    $hasQuestions = $payload['hasQuestions'] ?? false;
+@endphp
 <style>
     .participant-card {
         transition: all 0.3s ease;
@@ -178,7 +188,7 @@
                     </button>
                 @endif
                 
-                <button class="refresh-btn" onclick="location.reload()">
+                <button class="refresh-btn" id="refreshParticipantsBtn">
                     <i class="fas fa-sync-alt"></i> Refresh
                 </button>
                 <a href="{{ route('admin.quizzes.show', $quiz) }}" class="btn btn-secondary ms-2">
@@ -277,7 +287,7 @@
     </div>
     <div class="card-body p-0">
         @if(isset($participants) && count($participants) > 0)
-            <div class="table-responsive">
+            <div class="table-responsive" id="participantsTableWrapper">
                 <table class="table table-hover mb-0" id="participantsTable">
                     <thead class="table-light">
                         <tr>
@@ -290,66 +300,21 @@
                             <th width="100">Actions</th>
                         </thead>
                     <tbody>
-                        @php
-                            // Convert inProgressUsers to array if it's a Collection
-                            $inProgressArray = [];
-                            if (isset($inProgressUsers)) {
-                                if ($inProgressUsers instanceof \Illuminate\Database\Eloquent\Collection) {
-                                    $inProgressArray = $inProgressUsers->toArray();
-                                } elseif (is_array($inProgressUsers)) {
-                                    $inProgressArray = $inProgressUsers;
-                                }
-                            }
-                        @endphp
                         @foreach($participants as $index => $participant)
                             @php
                                 $participantId = $participant['id'] ?? null;
                                 $participantUserId = $participant['user_id'] ?? null;
                                 $participantName = $participant['name'] ?? 'Unknown';
                                 $isGuest = $participant['is_guest'] ?? false;
-                                $participantStatus = $participant['status'] ?? 'unknown';
+                                $participantStatus = $participant['effective_status'] ?? ($participant['status'] ?? 'unknown');
                                 $joinedAt = $participant['joined_at'] ?? null;
                                 $updatedAt = $participant['updated_at'] ?? null;
-                                
-                                $isInProgress = false;
-                                if ($participantUserId && in_array($participantUserId, $inProgressArray)) {
-                                    $isInProgress = true;
-                                }
-                                
                                 $displayEmail = $isGuest ? 'N/A' : ($participant['email'] ?? 'N/A');
-                                
-                                $hasCompleted = false;
-                                if ($participantUserId) {
-                                    $hasCompleted = \App\Models\QuizAttempt::where('quiz_id', $quiz->id)
-                                        ->where('user_id', $participantUserId)
-                                        ->where('status', 'completed')
-                                        ->exists();
-                                } elseif ($participantId) {
-                                    $hasCompleted = \App\Models\QuizAttempt::where('quiz_id', $quiz->id)
-                                        ->where('participant_id', $participantId)
-                                        ->where('status', 'completed')
-                                        ->exists();
-                                }
-                                
-                                $userAttempt = null;
-                                if ($participantUserId) {
-                                    $userAttempt = \App\Models\QuizAttempt::where('quiz_id', $quiz->id)
-                                        ->where('user_id', $participantUserId)
-                                        ->where('status', 'completed')
-                                        ->latest()
-                                        ->first();
-                                } elseif ($participantId) {
-                                    $userAttempt = \App\Models\QuizAttempt::where('quiz_id', $quiz->id)
-                                        ->where('participant_id', $participantId)
-                                        ->where('status', 'completed')
-                                        ->latest()
-                                        ->first();
-                                }
-                                
+                                $latestAttemptId = $participant['latest_attempt_id'] ?? null;
                                 $avatarLetter = $participantName ? strtoupper(substr($participantName, 0, 1)) : '?';
                                 $avatarClass = $isGuest ? 'avatar-guest' : '';
                             @endphp
-                            <tr class="participant-row" data-status="{{ $participantStatus }}">
+                            <tr class="participant-row" data-participant-id="{{ $participantId }}" data-status="{{ $participantStatus }}">
                                 <td class="text-center">{{ $index + 1 }} </td>
                                 <td>
                                     <div class="d-flex align-items-center">
@@ -372,7 +337,7 @@
                                     {{ $displayEmail }}
                                 </td>
                                 <td>
-                                    @if($participantStatus == 'taking_quiz' || $isInProgress)
+                                    @if($participantStatus == 'taking_quiz')
                                         <span class="status-badge status-taking-quiz">
                                             <i class="fas fa-play"></i> Taking Quiz
                                             <span class="online-indicator online-indicator-taking ms-1"></span>
@@ -382,7 +347,7 @@
                                             <i class="fas fa-circle"></i> In Lobby
                                             <span class="online-indicator online-indicator-active ms-1"></span>
                                         </span>
-                                    @elseif($hasCompleted)
+                                    @elseif($participantStatus == 'completed')
                                         <span class="status-badge status-completed">
                                             <i class="fas fa-check-circle"></i> Completed
                                         </span>
@@ -416,8 +381,8 @@
                                 </td>
                                 <td>
                                     <div class="btn-group" role="group">
-                                        @if($userAttempt)
-                                            <a href="{{ route('user.quiz.result', ['quiz' => $quiz->id, 'attempt' => $userAttempt->id]) }}" 
+                                        @if($latestAttemptId)
+                                            <a href="{{ route('user.quiz.result', ['quiz' => $quiz->id, 'attempt' => $latestAttemptId]) }}" 
                                                class="btn btn-sm btn-primary" title="View Result" target="_blank">
                                                 <i class="fas fa-chart-line"></i>
                                             </a>
@@ -451,56 +416,198 @@
 <script>
     $(document).ready(function() {
         const quizId = {{ $quiz->id }};
+        const authUserId = {{ Auth::id() ?? 0 }};
+        let activeFilter = 'all';
+        let isRefreshing = false;
         
-        // Initialize DataTable only if table exists and not already initialized
-        if ($('#participantsTable').length && $('#participantsTable tbody tr').length > 0 && !$.fn.DataTable.isDataTable('#participantsTable')) {
-            $('#participantsTable').DataTable({
-                pageLength: 25,
-                responsive: true,
-                order: [[4, 'desc']],
-                language: {
-                    search: "Search:",
-                    lengthMenu: "Show _MENU_ entries",
-                    info: "Showing _START_ to _END_ of _TOTAL_ participants",
-                    emptyTable: "No participants found"
-                },
-                columnDefs: [
-                    { orderable: false, targets: [6] }
-                ]
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text ?? '';
+            return div.innerHTML;
+        }
+
+        function statusBadge(status) {
+            if (status === 'taking_quiz') {
+                return `<span class="status-badge status-taking-quiz"><i class="fas fa-play"></i> Taking Quiz<span class="online-indicator online-indicator-taking ms-1"></span></span>`;
+            }
+            if (status === 'joined') {
+                return `<span class="status-badge status-active"><i class="fas fa-circle"></i> In Lobby<span class="online-indicator online-indicator-active ms-1"></span></span>`;
+            }
+            if (status === 'completed') {
+                return `<span class="status-badge status-completed"><i class="fas fa-check-circle"></i> Completed</span>`;
+            }
+            return `<span class="status-badge status-left"><i class="fas fa-sign-out-alt"></i> Left</span>`;
+        }
+
+        function formatDate(isoString, withRelative = false) {
+            if (!isoString) return '<span class="text-muted">N/A</span>';
+            const date = new Date(isoString);
+            const formatted = date.toLocaleString([], {
+                month: 'short',
+                day: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            if (!withRelative) return `<i class="far fa-calendar-alt text-muted me-1"></i>${formatted}`;
+            return `<i class="far fa-calendar-alt text-muted me-1"></i>${formatted}`;
+        }
+
+        function formatRelative(isoString) {
+            if (!isoString) return '<span class="text-muted">N/A</span>';
+            const diffSeconds = Math.max(0, Math.floor((Date.now() - new Date(isoString).getTime()) / 1000));
+            if (diffSeconds < 60) return 'just now';
+            if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)} min ago`;
+            if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)} hr ago`;
+            return `${Math.floor(diffSeconds / 86400)} day ago`;
+        }
+
+        function buildParticipantRow(participant, index) {
+            const participantName = participant.name || 'Unknown';
+            const isGuest = !!participant.is_guest;
+            const status = participant.effective_status || participant.status || 'left';
+            const avatarClass = isGuest ? 'avatar-guest' : '';
+            const latestAttemptButton = participant.latest_attempt_id
+                ? `<a href="/user/quiz/result/${quizId}/${participant.latest_attempt_id}" class="btn btn-sm btn-primary" title="View Result" target="_blank"><i class="fas fa-chart-line"></i></a>`
+                : '';
+
+            return `
+                <tr class="participant-row" data-participant-id="${participant.id}" data-status="${escapeHtml(status)}">
+                    <td class="text-center">${index + 1}</td>
+                    <td>
+                        <div class="d-flex align-items-center">
+                            <div class="avatar me-3 ${avatarClass}">${escapeHtml((participantName || '?').charAt(0).toUpperCase())}</div>
+                            <div>
+                                <span class="participant-name">${escapeHtml(participantName)}</span>
+                                ${isGuest ? '<span class="guest-badge">Examinee</span>' : ''}
+                                ${participant.user_id && participant.user_id === authUserId ? '<span class="badge bg-info ms-1">You</span>' : ''}
+                            </div>
+                        </div>
+                    </td>
+                    <td><i class="fas ${isGuest ? 'fa-user-friends' : 'fa-envelope'} text-muted me-1"></i>${escapeHtml(isGuest ? 'N/A' : (participant.email || 'N/A'))}</td>
+                    <td>${statusBadge(status)}</td>
+                    <td>${formatDate(participant.joined_at)}<br><small class="text-muted">${formatRelative(participant.joined_at)}</small></td>
+                    <td><i class="fas fa-clock text-muted me-1"></i><span class="last-active-time">${formatRelative(participant.updated_at)}</span></td>
+                    <td><div class="btn-group" role="group">${latestAttemptButton}</div></td>
+                </tr>
+            `;
+        }
+
+        function applyFilter(filter) {
+            activeFilter = filter;
+            $('.filter-btn').removeClass('active');
+            $(`.filter-btn[data-filter="${filter}"]`).addClass('active');
+
+            $('.participant-row').each(function() {
+                const status = $(this).data('status');
+                const show =
+                    filter === 'all' ||
+                    (filter === 'active' && (status === 'joined' || status === 'taking_quiz')) ||
+                    (filter === 'taking' && status === 'taking_quiz') ||
+                    (filter === 'lobby' && status === 'joined') ||
+                    (filter === 'completed' && status === 'completed') ||
+                    (filter === 'left' && status === 'left');
+                $(this).toggle(show);
             });
         }
-        
-        // Filter functionality
-        $('.filter-btn').click(function() {
-            const filter = $(this).data('filter');
-            
-            $('.filter-btn').removeClass('active');
-            $(this).addClass('active');
-            
-            if (filter === 'all') {
-                $('.participant-row').show();
-            } else {
-                $('.participant-row').hide();
-                $('.participant-row').each(function() {
-                    const statusCell = $(this).find('td:eq(3)');
-                    const statusText = statusCell.text();
-                    
-                    if (filter === 'active' && (statusText.includes('In Lobby') || statusText.includes('Taking Quiz'))) {
-                        $(this).show();
-                    } else if (filter === 'taking' && statusText.includes('Taking Quiz')) {
-                        $(this).show();
-                    } else if (filter === 'lobby' && statusText.includes('In Lobby')) {
-                        $(this).show();
-                    } else if (filter === 'completed' && statusText.includes('Completed')) {
-                        $(this).show();
-                    } else if (filter === 'left' && (statusText.includes('Left') || statusText.includes('Registered'))) {
-                        $(this).show();
+
+        function updateCounters(payload) {
+            $('#activeParticipantsCount').text(payload.activeParticipants || 0);
+            $('#takingQuizCount').text(payload.takingQuizCount || 0);
+            $('#lobbyCount').text(payload.lobbyUsers || 0);
+            $('#completedCount').text(payload.completedParticipants || 0);
+            $('#filterAllCount').text((payload.participants || []).length);
+            $('#filterActiveCount').text(payload.activeParticipants || 0);
+            $('#filterTakingCount').text(payload.takingQuizCount || 0);
+            $('#filterLobbyCount').text(payload.lobbyUsers || 0);
+            $('#filterCompletedCount').text(payload.completedParticipants || 0);
+            $('#filterLeftCount').text(payload.leftParticipants || 0);
+        }
+
+        function updateParticipantsTable(payload) {
+            const participants = payload.participants || [];
+            const tbody = $('#participantsTable tbody');
+            if (!tbody.length) return;
+
+            const existingRows = new Map();
+            tbody.find('tr.participant-row').each(function() {
+                existingRows.set(String($(this).data('participant-id')), this);
+            });
+
+            const nextRowElements = [];
+
+            participants.forEach((participant, index) => {
+                const rowHtml = buildParticipantRow(participant, index);
+                const rowId = String(participant.id);
+                const existingRow = existingRows.get(rowId);
+
+                if (existingRow) {
+                    const currentHtml = existingRow.outerHTML;
+                    if (currentHtml !== rowHtml) {
+                        $(existingRow).replaceWith(rowHtml);
+                        nextRowElements.push(tbody.find(`tr[data-participant-id="${participant.id}"]`)[0]);
+                    } else {
+                        nextRowElements.push(existingRow);
                     }
-                });
+                    existingRows.delete(rowId);
+                } else {
+                    const newRow = $(rowHtml)[0];
+                    nextRowElements.push(newRow);
+                }
+            });
+
+            existingRows.forEach((row) => $(row).remove());
+
+            nextRowElements.forEach((row) => {
+                if (row && row.parentNode !== tbody[0]) {
+                    tbody.append(row);
+                } else if (row) {
+                    tbody[0].appendChild(row);
+                }
+            });
+
+            applyFilter(activeFilter);
+        }
+
+        function refreshParticipantsData(showBusy = false) {
+            if (isRefreshing) return;
+            isRefreshing = true;
+
+            const refreshBtn = document.getElementById('refreshParticipantsBtn');
+            const originalBtnHtml = refreshBtn ? refreshBtn.innerHTML : null;
+            if (showBusy && refreshBtn) {
+                refreshBtn.disabled = true;
+                refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing';
             }
-            
-            const table = $('#participantsTable').DataTable();
-            if (table) table.draw();
+
+            fetch(`/admin/quizzes/${quizId}/participants-json`, {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                credentials: 'same-origin'
+            })
+            .then(response => response.json())
+            .then(payload => {
+                updateCounters(payload);
+                updateParticipantsTable(payload);
+            })
+            .catch(error => console.error('Refresh error:', error))
+            .finally(() => {
+                isRefreshing = false;
+                if (refreshBtn && originalBtnHtml !== null) {
+                    refreshBtn.disabled = false;
+                    refreshBtn.innerHTML = originalBtnHtml;
+                }
+            });
+        }
+
+        $('.filter-btn').click(function() {
+            applyFilter($(this).data('filter'));
+        });
+
+        $('#refreshParticipantsBtn').on('click', function() {
+            refreshParticipantsData(true);
         });
         
         // Start Quiz Button Handler
@@ -525,7 +632,8 @@
                 .then(data => {
                     if (data.success) {
                         alert('Quiz started successfully! ' + (data.participants_notified || 0) + ' participants notified.');
-                        location.reload();
+                        refreshParticipantsData(true);
+                        setTimeout(() => window.location.reload(), 300);
                     } else {
                         alert('' + (data.error || 'Failed to start quiz. Please try again.'));
                         startQuizBtn.disabled = false;
@@ -564,7 +672,8 @@
                     .then(data => {
                         if (data.success) {
                             alert('Quiz ended successfully.');
-                            location.reload();
+                            refreshParticipantsData(true);
+                            setTimeout(() => window.location.reload(), 300);
                         } else {
                             alert('' + (data.error || 'Failed to end quiz. Please try again.'));
                             quitQuizBtn.disabled = false;
@@ -581,9 +690,11 @@
             });
         }
         
-        // Auto-refresh every 10 seconds
+        applyFilter('all');
+
+        // Auto-refresh every 10 seconds without full page reload
         let autoRefresh = setInterval(function() {
-            location.reload();
+            refreshParticipantsData(false);
         }, 10000);
         
         window.addEventListener('beforeunload', function() {
@@ -597,7 +708,7 @@
             linkInput.select();
             linkInput.setSelectionRange(0, 99999);
             document.execCommand('copy');
-            alert('✅ Quiz link copied to clipboard!');
+            alert('Quiz link copied to clipboard!');
         }
     }
 </script>

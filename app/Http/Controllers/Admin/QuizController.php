@@ -285,7 +285,10 @@ class QuizController extends Controller
         $quiz->update([
             'is_published' => true,
             'scheduled_at' => now(),
-            'ends_at' => now()->addMinutes($quiz->duration_minutes)
+            'ends_at' => now()->addMinutes($quiz->duration_minutes),
+            'settings' => array_merge($quiz->settings ?? [], [
+                'live_started_at' => now()->toIso8601String(),
+            ]),
         ]);
         
         $participants = QuizParticipant::where('quiz_id', $quiz->id)
@@ -375,25 +378,8 @@ class QuizController extends Controller
         if (!Auth::user()->isMasterAdmin() && $quiz->created_by !== Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
-        
-        // ONLY get participants with status 'joined' (actively in lobby)
-        $participants = QuizParticipant::with('user')
-            ->where('quiz_id', $quiz->id)
-            ->where('status', 'joined')
-            ->orderBy('joined_at', 'asc')
-            ->get()
-            ->map(function ($p) {
-                return [
-                    'id' => $p->id,
-                    'name' => $p->user ? $p->user->name : ($p->guest_name ?? 'Guest'),
-                    'is_guest' => $p->is_guest,
-                    'status' => $p->status,
-                    'joined_at' => $p->joined_at,
-                    'joined_at_human' => $p->joined_at ? $p->joined_at->diffForHumans() : 'Just now'
-                ];
-            });
-        
-        return response()->json($participants);
+
+        return response()->json($this->buildParticipantsPayload($quiz));
     }
     
 
@@ -407,66 +393,11 @@ public function participants(Quiz $quiz)
         abort(403, 'You do not have permission to view participants for this quiz.');
     }
     
-    // Get all participants with their details
-    $participants = QuizParticipant::with('user')
-        ->where('quiz_id', $quiz->id)
-        ->orderByRaw("FIELD(status, 'joined', 'taking_quiz', 'completed', 'left')")
-        ->orderBy('created_at', 'desc')
-        ->get()
-        ->map(function ($p) {
-            return [
-                'id' => $p->id,
-                'user_id' => $p->user_id,
-                'name' => $p->user ? $p->user->name : ($p->guest_name ?? 'Guest'),
-                'email' => $p->user ? $p->user->email : null,
-                'is_guest' => $p->is_guest,
-                'status' => $p->status,
-                'joined_at' => $p->joined_at,
-                'updated_at' => $p->updated_at
-            ];
-        });
-    
-    // Get users currently taking the quiz (in_progress attempts)
-    $inProgressUsers = QuizAttempt::where('quiz_id', $quiz->id)
-        ->where('status', 'in_progress')
-        ->pluck('user_id')
-        ->toArray();
-    
-    // Calculate counts
-    $lobbyUsers = $participants->where('status', 'joined')->count();
-    $activeParticipants = $participants->whereIn('status', ['joined', 'taking_quiz'])->count() + count($inProgressUsers);
-    
-    // Get completed participants count
-    $completedParticipants = QuizAttempt::where('quiz_id', $quiz->id)
-        ->where('status', 'completed')
-        ->distinct('user_id')
-        ->count('user_id');
-    
-    // Add guest completed attempts to completed count
-    $guestCompletedAttempts = QuizAttempt::where('quiz_id', $quiz->id)
-        ->where('status', 'completed')
-        ->whereNotNull('participant_id')
-        ->distinct('participant_id')
-        ->count('participant_id');
-    
-    $completedParticipants += $guestCompletedAttempts;
-    
-    // Get left participants count
-    $leftParticipants = $participants->where('status', 'left')->count();
-    
-    $isQuizStarted = $quiz->is_published && $quiz->scheduled_at && $quiz->scheduled_at <= now();
-    $hasQuestions = $quiz->questions()->count() > 0;
+    $payload = $this->buildParticipantsPayload($quiz);
     
     return view('admin.quizzes.participants', compact(
         'quiz', 
-        'participants', 
-        'activeParticipants',
-        'inProgressUsers',
-        'lobbyUsers',
-        'completedParticipants',
-        'leftParticipants',
-        'isQuizStarted',
-        'hasQuestions'
+        'payload'
     ));
 }
     
@@ -504,5 +435,94 @@ public function participants(Quiz $quiz)
             'total_points' => $totalPoints,
             'total_questions' => $totalQuestions
         ]);
+    }
+
+    private function buildParticipantsPayload(Quiz $quiz): array
+    {
+        $participantKey = function ($userId, $participantId) {
+            if ($userId) {
+                return 'user:' . $userId;
+            }
+
+            if ($participantId) {
+                return 'participant:' . $participantId;
+            }
+
+            return null;
+        };
+
+        $attempts = QuizAttempt::where('quiz_id', $quiz->id)
+            ->whereIn('status', ['in_progress', 'completed'])
+            ->orderByDesc('created_at')
+            ->get();
+
+        $inProgressKeys = $attempts
+            ->where('status', 'in_progress')
+            ->map(fn ($attempt) => $participantKey($attempt->user_id, $attempt->participant_id))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $completedKeys = $attempts
+            ->where('status', 'completed')
+            ->map(fn ($attempt) => $participantKey($attempt->user_id, $attempt->participant_id))
+            ->filter()
+            ->unique()
+            ->values();
+
+        $latestCompletedByKey = $attempts
+            ->where('status', 'completed')
+            ->mapWithKeys(function ($attempt) use ($participantKey) {
+                return [$participantKey($attempt->user_id, $attempt->participant_id) => $attempt];
+            });
+
+        $participants = QuizParticipant::with('user')
+            ->where('quiz_id', $quiz->id)
+            ->orderByRaw("FIELD(status, 'joined', 'taking_quiz', 'completed', 'left')")
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($participant) use ($participantKey, $inProgressKeys, $completedKeys, $latestCompletedByKey) {
+                $key = $participantKey($participant->user_id, $participant->id);
+                $effectiveStatus = $participant->status;
+
+                if ($key && $inProgressKeys->contains($key)) {
+                    $effectiveStatus = 'taking_quiz';
+                } elseif ($key && $completedKeys->contains($key)) {
+                    $effectiveStatus = 'completed';
+                }
+
+                $latestAttempt = $key ? $latestCompletedByKey->get($key) : null;
+
+                return [
+                    'id' => $participant->id,
+                    'user_id' => $participant->user_id,
+                    'participant_key' => $key,
+                    'name' => $participant->user ? $participant->user->name : ($participant->guest_name ?? 'Guest'),
+                    'email' => $participant->user ? $participant->user->email : null,
+                    'is_guest' => $participant->is_guest,
+                    'status' => $participant->status,
+                    'effective_status' => $effectiveStatus,
+                    'joined_at' => optional($participant->joined_at)->toIso8601String(),
+                    'updated_at' => optional($participant->updated_at)->toIso8601String(),
+                    'latest_attempt_id' => $latestAttempt?->id,
+                ];
+            })
+            ->values();
+
+        $lobbyUsers = $participants->where('effective_status', 'joined')->count();
+        $takingQuizCount = $participants->where('effective_status', 'taking_quiz')->count();
+        $completedParticipants = $participants->where('effective_status', 'completed')->count();
+        $leftParticipants = $participants->where('effective_status', 'left')->count();
+
+        return [
+            'participants' => $participants,
+            'activeParticipants' => $lobbyUsers + $takingQuizCount,
+            'takingQuizCount' => $takingQuizCount,
+            'lobbyUsers' => $lobbyUsers,
+            'completedParticipants' => $completedParticipants,
+            'leftParticipants' => $leftParticipants,
+            'isQuizStarted' => $quiz->is_published && $quiz->scheduled_at && $quiz->scheduled_at <= now(),
+            'hasQuestions' => $quiz->questions()->count() > 0,
+        ];
     }
 }

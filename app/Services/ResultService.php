@@ -122,6 +122,7 @@ class ResultService
             ->map(function ($attempt) {
                 return [
                     'attempt_id' => $attempt->id,
+                    'quiz_id' => $attempt->quiz_id,
                     'quiz_title' => $attempt->quiz->title,
                     'started_at' => $attempt->started_at,
                     'ended_at' => $attempt->ended_at,

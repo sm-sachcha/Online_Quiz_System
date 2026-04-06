@@ -306,25 +306,24 @@
                     <div class="attempts-info text-center">
                         <div class="row">
                             <div class="col-md-4">
-                                <i class="fas fa-chart-line text-success"></i>
-                                <strong>Best Score: {{ $bestScoreInfo['score'] ?? $attempt->score }} points</strong>
-                                @if(isset($bestScoreInfo) && $bestScoreInfo && ($bestScoreInfo['score'] ?? 0) != $attempt->score)
-                                    <br><small class="text-muted">({{ $bestScoreInfo['percentage'] ?? 0 }}%)</small>
-                                @endif
+                                <i class="fas fa-bullseye text-primary"></i>
+                                <strong>Current Attempt: {{ $attempt->score }} points</strong>
+                                <br><small class="text-muted">({{ $percentage ?? 0 }}%)</small>
                             </div>
                             <div class="col-md-4">
-                                <!-- <i class="fas fa-chart-line text-success"></i>
-                                <strong>Best Score: {{ $bestScoreInfo['score'] ?? $attempt->score }} points</strong>
-                                @if(isset($bestScoreInfo) && $bestScoreInfo && ($bestScoreInfo['score'] ?? 0) != $attempt->score)
+                                <i class="fas fa-chart-line text-success"></i>
+                                @if(isset($bestScoreInfo) && $bestScoreInfo)
+                                    <strong>Best Score: {{ $bestScoreInfo['score'] }} points</strong>
                                     <br><small class="text-muted">({{ $bestScoreInfo['percentage'] ?? 0 }}%)</small>
-                                @endif -->
+                                @else
+                                    <strong>Best Score: This attempt</strong>
+                                    <br><small class="text-muted">{{ $attempt->score }} points ({{ $percentage ?? 0 }}%)</small>
+                                @endif
                             </div>
                             <div class="col-md-4">
                                 <i class="fas fa-bullseye text-info"></i>
-                                <strong>Best Accuracy: {{ $bestScoreInfo['accuracy'] ?? $performanceMetrics['accuracy'] ?? 0 }}%</strong>
-                                @if(isset($bestScoreInfo) && $bestScoreInfo && ($bestScoreInfo['accuracy'] ?? 0) != ($performanceMetrics['accuracy'] ?? 0))
-                                    <br><small class="text-muted">({{ $bestScoreInfo['correct_answers'] ?? 0 }}/{{ $bestScoreInfo['total_questions'] ?? 0 }} correct)</small>
-                                @endif
+                                <strong>Current Accuracy: {{ $performanceMetrics['accuracy'] ?? 0 }}%</strong>
+                                <br><small class="text-muted">{{ $attempt->correct_answers }}/{{ $attempt->total_questions }} correct</small>
                             </div>
                         </div>
                     </div>
@@ -435,6 +434,11 @@
 
 @push('scripts')
 <script>
+    const resultQuizId = {{ $attempt->quiz_id }};
+    sessionStorage.removeItem('joined_quiz_' + resultQuizId);
+    sessionStorage.removeItem('guest_name_' + resultQuizId);
+    sessionStorage.removeItem('participant_id_' + resultQuizId);
+
     function shareResult() {
         const url = window.location.href;
         const text = `I scored {{ $percentage ?? 0 }}% on "{{ $attempt->quiz->title }}" and ranked #{{ $userRank ?? 'N/A' }}! Can you beat my score?`;
