@@ -317,6 +317,24 @@
         
         // Initialize the shared quiz channel with Laravel Echo / Reverb.
         window.initializeEcho = function(quizId, callbacks) {
+            const EchoConstructor = typeof window.Echo === 'function'
+                ? window.Echo
+                : (typeof Echo !== 'undefined' ? Echo : null);
+
+            if ((!window.Echo || typeof window.Echo.channel !== 'function') && EchoConstructor && typeof Pusher !== 'undefined') {
+                window.Echo = new EchoConstructor({
+                    broadcaster: 'pusher',
+                    key: '{{ env('VITE_REVERB_APP_KEY', env('REVERB_APP_KEY')) }}',
+                    wsHost: '{{ env('VITE_REVERB_HOST', env('REVERB_HOST', '127.0.0.1')) }}',
+                    wsPort: Number('{{ env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)) }}'),
+                    wssPort: Number('{{ env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)) }}'),
+                    forceTLS: '{{ env('VITE_REVERB_SCHEME', env('REVERB_SCHEME', 'http')) }}' === 'https',
+                    authEndpoint: '/broadcasting/auth',
+                    enabledTransports: ['ws', 'wss'],
+                    disableStats: true,
+                });
+            }
+
             if (!quizId || typeof window.Echo === 'undefined') {
                 return null;
             }
@@ -361,6 +379,54 @@
                 }
                 if (callbacks.onUserDisconnected) {
                     channel.listen('.user.disconnected', callbacks.onUserDisconnected);
+                }
+                if (callbacks.onParticipantsUpdated) {
+                    channel.listen('.participants.updated', callbacks.onParticipantsUpdated);
+                }
+            }
+
+            return channel;
+        };
+
+        window.initializeAttemptEcho = function(attemptId, callbacks) {
+            const EchoConstructor = typeof window.Echo === 'function'
+                ? window.Echo
+                : (typeof Echo !== 'undefined' ? Echo : null);
+
+            if ((!window.Echo || typeof window.Echo.channel !== 'function') && EchoConstructor && typeof Pusher !== 'undefined') {
+                window.Echo = new EchoConstructor({
+                    broadcaster: 'pusher',
+                    key: '{{ env('VITE_REVERB_APP_KEY', env('REVERB_APP_KEY')) }}',
+                    wsHost: '{{ env('VITE_REVERB_HOST', env('REVERB_HOST', '127.0.0.1')) }}',
+                    wsPort: Number('{{ env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)) }}'),
+                    wssPort: Number('{{ env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)) }}'),
+                    forceTLS: '{{ env('VITE_REVERB_SCHEME', env('REVERB_SCHEME', 'http')) }}' === 'https',
+                    authEndpoint: '/broadcasting/auth',
+                    enabledTransports: ['ws', 'wss'],
+                    disableStats: true,
+                });
+            }
+
+            if (!attemptId || typeof window.Echo === 'undefined') {
+                return null;
+            }
+
+            const channelName = `quiz.attempt.${attemptId}`;
+
+            try {
+                window.Echo.leaveChannel(channelName);
+            } catch (error) {
+                console.debug('Attempt Echo channel reset skipped', error);
+            }
+
+            const channel = window.Echo.channel(channelName);
+
+            if (callbacks) {
+                if (callbacks.onAttemptQuestionBroadcasted) {
+                    channel.listen('.attempt.question.broadcasted', callbacks.onAttemptQuestionBroadcasted);
+                }
+                if (callbacks.onAttemptResultUpdated) {
+                    channel.listen('.attempt.result.updated', callbacks.onAttemptResultUpdated);
                 }
             }
 

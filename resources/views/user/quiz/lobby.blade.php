@@ -499,82 +499,174 @@
 </div>
 
 @push('scripts')
-<script src="https://js.pusher.com/7.2/pusher.min.js"></script>
 <script>
     const quizId = {{ $quiz->id }};
     const userId = {{ Auth::id() ?? 0 }};
+    const currentUserName = @json(Auth::user()?->name);
     const isQuizStarted = {{ isset($quizStartedByAdmin) && $quizStartedByAdmin ? 'true' : 'false' }};
-    let participants = [];
+    const initialParticipantId = {{ isset($participant) && $participant ? $participant->id : 'null' }};
+    const initialParticipantStatus = @json(isset($participant) && $participant ? $participant->status : null);
+    const initialGuestName = @json(session('guest_name'));
+    let participants = @json($participants->values());
     let hasLeft = false;
-    let heartbeatInterval = null;
-    let refreshInterval = null;
     let isJoined = false;
     let redirectInterval = null;
-    let statusCheckInterval = null;
     let isRedirecting = false;
     let currentParticipantId = null;
     let channel = null;
-    let pusher = null;
+    let heartbeatInterval = null;
+    let leaveSignalSent = false;
+    const csrfToken = '{{ csrf_token() }}';
 
-    // Initialize Pusher
-    function initPusher() {
-        if (pusher) return;
-        
-        pusher = new Pusher('{{ env('PUSHER_APP_KEY') }}', {
-            cluster: '{{ env('PUSHER_APP_CLUSTER') }}',
-            authEndpoint: '/broadcasting/auth',
-            auth: {
-                headers: {
-                    'X-CSRF-Token': '{{ csrf_token() }}'
+    function initRealtimeChannel() {
+        if (channel || typeof window.initializeEcho !== 'function') {
+            return;
+        }
+
+        channel = window.initializeEcho(quizId, {
+            onParticipantJoined(event) {
+                const participant = event.participant;
+
+                if (!participant) {
+                    return;
+                }
+
+                upsertParticipant(participant);
+                showNotification(`${participant.name} joined the lobby!`, 'info');
+            },
+            onParticipantLeft(event) {
+                const participant = event.participant;
+
+                if (!participant) {
+                    return;
+                }
+
+                removeParticipant(participant);
+                showNotification(`${participant.name} left the lobby`, 'warning');
+            },
+            onLobbyUpdated(event) {
+                if (Array.isArray(event.participants)) {
+                    participants = event.participants;
+                    renderParticipants();
+                }
+            },
+            onQuizStarted(event) {
+                if (isJoined && !hasLeft && !isRedirecting) {
+                    const redirectUrl = event.redirect_url || `/user/quiz/start/${quizId}`;
+                    showNotification('Quiz is starting now!', 'success');
+                    setTimeout(() => window.showQuizStartCountdown(3, redirectUrl), 300);
+                }
+            },
+            onQuizEnded() {
+                showNotification('This quiz has ended.', 'warning');
+                setTimeout(() => window.location.reload(), 1200);
+            },
+            onParticipantsUpdated(event) {
+                const payload = event.payload || {};
+                if (Array.isArray(payload.lobby_participants)) {
+                    participants = payload.lobby_participants;
+                    renderParticipants();
                 }
             }
         });
+    }
 
-        channel = pusher.subscribe('presence-quiz.' + quizId);
-        
-        // WebSocket event handlers
-        channel.bind('participant.joined', function(data) {
-            console.log('Participant joined:', data);
-            if (data.participant && !participants.find(p => p.id === data.participant.id)) {
-                participants.push(data.participant);
-                renderParticipants();
-                showNotification(`${data.participant.name} joined the lobby!`, 'info');
-            }
+    function upsertParticipant(participant) {
+        const nextParticipant = {
+            status: 'joined',
+            ...participant,
+        };
+
+        const participantIndex = participants.findIndex((item) => {
+            if (nextParticipant.id && item.id === nextParticipant.id) return true;
+            if (nextParticipant.user_id && item.user_id === nextParticipant.user_id) return true;
+            return false;
         });
 
-        channel.bind('participant.left', function(data) {
-            console.log('Participant left:', data);
-            participants = participants.filter(p => p.id !== data.participant.id);
-            renderParticipants();
-            showNotification(`${data.participant.name} left the lobby`, 'warning');
+        if (participantIndex === -1) {
+            participants.push(nextParticipant);
+        } else {
+            participants.splice(participantIndex, 1, {
+                ...participants[participantIndex],
+                ...nextParticipant,
+            });
+        }
+
+        renderParticipants();
+    }
+
+    function removeParticipant(participant) {
+        participants = participants.filter((item) => {
+            if (participant.id && item.id === participant.id) return false;
+            if (participant.user_id && item.user_id === participant.user_id) return false;
+            return true;
         });
+
+        renderParticipants();
     }
 
     function redirectToQuizStart() {
         if (isRedirecting) return;
+        stopLobbyHeartbeat();
         isRedirecting = true;
-        if (statusCheckInterval) clearInterval(statusCheckInterval);
         window.location.href = `/user/quiz/start/${quizId}`;
     }
 
-    function checkQuizStatus() {
-        if (isRedirecting) return;
-        
-        fetch(`/user/quiz/${quizId}/status`, {
-            method: 'GET',
+    function startLobbyHeartbeat() {
+        if (heartbeatInterval) {
+            return;
+        }
+
+        heartbeatInterval = setInterval(() => {
+            if (!isJoined || hasLeft || isRedirecting) {
+                return;
+            }
+
+            fetch(`/user/quiz/lobby/${quizId}/heartbeat`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json'
+                },
+                credentials: 'same-origin'
+            }).catch(() => {});
+        }, 15000);
+    }
+
+    function stopLobbyHeartbeat() {
+        if (!heartbeatInterval) {
+            return;
+        }
+
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+    }
+
+    function notifyLobbyLeave() {
+        if (!isJoined || hasLeft || isRedirecting || leaveSignalSent) {
+            return;
+        }
+
+        leaveSignalSent = true;
+        stopLobbyHeartbeat();
+
+        const leaveData = new FormData();
+        leaveData.append('_token', csrfToken);
+
+        if (navigator.sendBeacon) {
+            navigator.sendBeacon(`/user/quiz/lobby/${quizId}/leave`, leaveData);
+            return;
+        }
+
+        fetch(`/user/quiz/lobby/${quizId}/leave`, {
+            method: 'POST',
             headers: {
-                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'X-CSRF-TOKEN': csrfToken,
                 'Accept': 'application/json'
             },
-            credentials: 'same-origin'
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.is_started === true && isJoined && !isRedirecting && !hasLeft) {
-                redirectToQuizStart();
-            }
-        })
-        .catch(error => console.error('Error checking quiz status:', error));
+            credentials: 'same-origin',
+            keepalive: true
+        }).catch(() => {});
     }
 
     function joinLobby(guestName = null) {
@@ -598,7 +690,7 @@
         fetch(`/user/quiz/lobby/${quizId}/join`, {
             method: 'POST',
             headers: {
-                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'X-CSRF-TOKEN': csrfToken,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
@@ -609,6 +701,8 @@
         .then(data => {
             if (data.success) {
                 isJoined = true;
+                hasLeft = false;
+                leaveSignalSent = false;
                 currentParticipantId = data.participant_id;
                 
                 if (guestSection) guestSection.style.display = 'none';
@@ -620,17 +714,19 @@
                 sessionStorage.setItem('joined_quiz_' + quizId, 'true');
                 if (guestName) sessionStorage.setItem('guest_name_' + quizId, guestName);
                 if (currentParticipantId) sessionStorage.setItem('participant_id_' + quizId, currentParticipantId);
-                
-                loadParticipants();
-                initPusher();
-                
-                if (statusCheckInterval) clearInterval(statusCheckInterval);
-                statusCheckInterval = setInterval(checkQuizStatus, 2000);
+
+                upsertParticipant({
+                    id: currentParticipantId,
+                    user_id: userId || null,
+                    name: guestName || currentUserName || 'You',
+                    is_guest: !userId,
+                    status: 'joined'
+                });
+                initRealtimeChannel();
+                startLobbyHeartbeat();
                 
                 if (isQuizStarted) {
                     redirectToQuizStart();
-                } else {
-                    checkQuizStatus();
                 }
                 
                 showNotification('Successfully joined the lobby!', 'success');
@@ -666,7 +762,7 @@
         fetch(`/user/quiz/lobby/${quizId}/leave`, {
             method: 'POST',
             headers: {
-                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'X-CSRF-TOKEN': csrfToken,
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
             },
@@ -675,12 +771,14 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
+                stopLobbyHeartbeat();
                 hasLeft = true;
+                leaveSignalSent = true;
                 isJoined = false;
-                if (statusCheckInterval) clearInterval(statusCheckInterval);
                 sessionStorage.removeItem('joined_quiz_' + quizId);
                 sessionStorage.removeItem('guest_name_' + quizId);
                 sessionStorage.removeItem('participant_id_' + quizId);
+                removeParticipant({ id: currentParticipantId, user_id: userId || null });
                 window.location.reload();
             } else {
                 alert(data.message || 'Failed to leave lobby. Please try again.');
@@ -698,19 +796,6 @@
                 leaveBtn.innerHTML = 'Leave Lobby';
             }
         });
-    }
-
-    function loadParticipants() {
-        fetch(`/user/quiz/lobby/${quizId}/participants`, {
-            credentials: 'same-origin',
-            headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Accept': 'application/json' }
-        })
-        .then(response => response.json())
-        .then(data => {
-            participants = data;
-            renderParticipants();
-        })
-        .catch(error => console.error('Error loading participants:', error));
     }
 
     function renderParticipants() {
@@ -756,19 +841,6 @@
         document.getElementById('participantCount').textContent = participants.length;
     }
 
-    function sendHeartbeat() {
-        if (hasLeft || !isJoined) return;
-        
-        fetch(`/user/quiz/lobby/${quizId}/heartbeat`, {
-            method: 'POST',
-            headers: {
-                'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                'Content-Type': 'application/json'
-            },
-            credentials: 'same-origin'
-        }).catch(error => console.error('Heartbeat error:', error));
-    }
-
     function escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
@@ -799,10 +871,48 @@
                 if (guestSection) guestSection.style.display = 'none';
                 if (joinedInfoDiv) joinedInfoDiv.style.display = 'block';
             }
-            loadParticipants();
-            initPusher();
-            statusCheckInterval = setInterval(checkQuizStatus, 2000);
-            checkQuizStatus();
+            startLobbyHeartbeat();
+            initRealtimeChannel();
+            if (isQuizStarted) {
+                redirectToQuizStart();
+            }
+            return;
+        }
+
+        if (initialParticipantId && ['joined', 'taking_quiz'].includes(initialParticipantStatus)) {
+            isJoined = true;
+            currentParticipantId = initialParticipantId;
+
+            sessionStorage.setItem('joined_quiz_' + quizId, 'true');
+            sessionStorage.setItem('participant_id_' + quizId, String(initialParticipantId));
+
+            if (initialGuestName) {
+                sessionStorage.setItem('guest_name_' + quizId, initialGuestName);
+            }
+
+            const joinedNameEl = document.getElementById('joinedName');
+            const guestSection = document.getElementById('guestJoinSection');
+            const joinedInfoDiv = document.getElementById('joinedInfo');
+
+            if (joinedNameEl && initialGuestName) {
+                joinedNameEl.innerText = initialGuestName;
+            }
+
+            if (guestSection && initialGuestName) {
+                guestSection.style.display = 'none';
+            }
+
+            if (joinedInfoDiv && initialGuestName) {
+                joinedInfoDiv.style.display = 'block';
+            }
+
+            startLobbyHeartbeat();
+
+            initRealtimeChannel();
+
+            if (isQuizStarted) {
+                redirectToQuizStart();
+            }
         }
     }
 
@@ -851,23 +961,16 @@
 
     // Initialize
     checkIfAlreadyJoined();
-    loadParticipants();
-    
-    heartbeatInterval = setInterval(sendHeartbeat, 10000);
-    
-    refreshInterval = setInterval(function() {
-        if (!hasLeft && !document.hidden) loadParticipants();
-    }, 5000);
+    renderParticipants();
+    initRealtimeChannel();
     
     window.addEventListener('beforeunload', function() {
-        if (statusCheckInterval) clearInterval(statusCheckInterval);
-        if (heartbeatInterval) clearInterval(heartbeatInterval);
-        if (refreshInterval) clearInterval(refreshInterval);
         if (redirectInterval) clearInterval(redirectInterval);
-        
-        if (isJoined && !hasLeft && !isRedirecting) {
-            navigator.sendBeacon(`/user/quiz/lobby/${quizId}/leave`, new Blob([JSON.stringify({})], {type: 'application/json'}));
-        }
+        notifyLobbyLeave();
+    });
+
+    window.addEventListener('pagehide', function() {
+        notifyLobbyLeave();
     });
 </script>
 @endpush

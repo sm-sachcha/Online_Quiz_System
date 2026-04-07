@@ -137,11 +137,11 @@
                         <!-- Score Circle -->
                         <div class="col-md-4 text-center mb-4">
                             <div class="score-circle">
-                                <div class="score-number">{{ $percentage ?? 0 }}%</div>
+                                <div class="score-number" id="resultPercentage">{{ $percentage ?? 0 }}%</div>
                                 <div class="score-label">Your Score</div>
                             </div>
                             <div class="mt-3">
-                                <h4>{{ $attempt->score }} / {{ $attempt->quiz->total_points }} points</h4>
+                                <h4><span id="resultScore">{{ $attempt->score }}</span> / {{ $attempt->quiz->total_points }} points</h4>
                                 @if(isset($isBestScore) && $isBestScore)
                                     <div class="best-score-badge mt-2">
                                         <i class="fas fa-star"></i> Your Best Score!
@@ -154,7 +154,7 @@
                         <div class="col-md-4 text-center mb-4">
                             @if(isset($userRank) && $userRank)
                                 <div class="rank-card">
-                                    <div class="rank-number">
+                                    <div class="rank-number" id="resultRank">
                                         @if($userRank == 1)
                                             🥇 #1
                                         @elseif($userRank == 2)
@@ -167,19 +167,20 @@
                                     </div>
                                     <div class="rank-label">Rank</div>
                                     <div class="mt-2">
-                                        <small>Out of {{ $totalParticipants ?? 0 }} participants</small>
+                                        <small>Out of <span id="resultTotalParticipants">{{ $totalParticipants ?? 0 }}</span> participants</small>
                                     </div>
                                     <div class="mt-1">
-                                        <small>Top {{ ($totalParticipants ?? 0) > 0 ? round(($userRank / ($totalParticipants ?? 1)) * 100, 1) : 0 }}%</small>
+                                        <small id="resultTopPercent">Top {{ ($totalParticipants ?? 0) > 0 ? round(($userRank / ($totalParticipants ?? 1)) * 100, 1) : 0 }}%</small>
                                     </div>
                                 </div>
                             @else
                                 <div class="rank-card" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%);">
-                                    <div class="rank-number">N/A</div>
+                                    <div class="rank-number" id="resultRank">N/A</div>
                                     <div class="rank-label">Rank</div>
                                     <div class="mt-2">
-                                        <small>Complete more quizzes to get ranked!</small>
+                                        <small>Out of <span id="resultTotalParticipants">{{ $totalParticipants ?? 0 }}</span> participants</small>
                                     </div>
+                                    <div class="mt-1"><small id="resultTopPercent">Unranked</small></div>
                                 </div>
                             @endif
                         </div>
@@ -187,17 +188,17 @@
                         <!-- Performance Summary -->
                         <div class="col-md-4">
                             <div class="stat-box mb-2">
-                                <div class="stat-number text-success">{{ $attempt->correct_answers }}</div>
+                                <div class="stat-number text-success" id="resultCorrectAnswers">{{ $attempt->correct_answers }}</div>
                                 <div>Correct Answers</div>
                             </div>
                             <div class="stat-box mb-2">
-                                <div class="stat-number text-danger">{{ $attempt->incorrect_answers }}</div>
+                                <div class="stat-number text-danger" id="resultIncorrectAnswers">{{ $attempt->incorrect_answers }}</div>
                                 <div>Incorrect Answers</div>
                             </div>
                             <div class="stat-box">
-                                <div class="stat-number text-info">{{ $performanceMetrics['accuracy'] ?? 0 }}%</div>
+                                <div class="stat-number text-info" id="resultAccuracy">{{ $performanceMetrics['accuracy'] ?? 0 }}%</div>
                                 <div>Accuracy</div>
-                                <small class="text-muted">{{ $attempt->correct_answers }}/{{ $attempt->total_questions }} questions</small>
+                                <small class="text-muted"><span id="resultAccuracyBreakdown">{{ $attempt->correct_answers }}/{{ $attempt->total_questions }}</span> questions</small>
                             </div>
                         </div>
                     </div>
@@ -353,6 +354,7 @@
                     </div>
                     <div class="card-body p-0">
                         <div class="list-group list-group-flush">
+                            <div id="resultLeaderboardList">
                             @foreach($topLeaderboard as $entry)
                                 @php
                                     // Handle different data structures - entry could be object or array
@@ -419,6 +421,7 @@
                                     </div>
                                 </div>
                             @endforeach
+                            </div>
                         </div>
                         @if(isset($totalParticipants) && $totalParticipants > 10)
                             <div class="card-footer text-center">
@@ -435,6 +438,9 @@
 @push('scripts')
 <script>
     const resultQuizId = {{ $attempt->quiz_id }};
+    const resultAttemptId = {{ $attempt->id }};
+    const resultAttemptUserId = {{ $attempt->user_id ?? 'null' }};
+    const resultAttemptParticipantId = {{ $attempt->participant_id ?? 'null' }};
     sessionStorage.removeItem('joined_quiz_' + resultQuizId);
     sessionStorage.removeItem('guest_name_' + resultQuizId);
     sessionStorage.removeItem('participant_id_' + resultQuizId);
@@ -469,6 +475,124 @@
                 clearInterval(interval);
             }
         }, 20);
+    }
+
+    function getRankDisplay(rank) {
+        if (rank === 1) return '🥇 #1';
+        if (rank === 2) return '🥈 #2';
+        if (rank === 3) return '🥉 #3';
+        return rank ? `#${rank}` : 'N/A';
+    }
+
+    function updateResultSummary(payload) {
+        if (typeof payload.score !== 'undefined') {
+            const scoreEl = document.getElementById('resultScore');
+            if (scoreEl) scoreEl.textContent = payload.score;
+        }
+
+        if (typeof payload.percentage !== 'undefined') {
+            const percentageEl = document.getElementById('resultPercentage');
+            if (percentageEl) percentageEl.textContent = `${payload.percentage}%`;
+        }
+
+        if (typeof payload.correct_answers !== 'undefined') {
+            const correctEl = document.getElementById('resultCorrectAnswers');
+            if (correctEl) correctEl.textContent = payload.correct_answers;
+        }
+
+        if (typeof payload.incorrect_answers !== 'undefined') {
+            const incorrectEl = document.getElementById('resultIncorrectAnswers');
+            if (incorrectEl) incorrectEl.textContent = payload.incorrect_answers;
+        }
+
+        if (typeof payload.correct_answers !== 'undefined' && typeof payload.incorrect_answers !== 'undefined') {
+            const totalAnswered = Number(payload.correct_answers) + Number(payload.incorrect_answers);
+            const accuracy = totalAnswered > 0 ? ((Number(payload.correct_answers) / totalAnswered) * 100).toFixed(1) : '0.0';
+            const accuracyEl = document.getElementById('resultAccuracy');
+            const accuracyBreakdownEl = document.getElementById('resultAccuracyBreakdown');
+
+            if (accuracyEl) accuracyEl.textContent = `${accuracy}%`;
+            if (accuracyBreakdownEl) accuracyBreakdownEl.textContent = `${payload.correct_answers}/${totalAnswered}`;
+        }
+
+        if (typeof payload.rank !== 'undefined') {
+            const rankEl = document.getElementById('resultRank');
+            if (rankEl) rankEl.textContent = getRankDisplay(payload.rank);
+        }
+
+        if (typeof payload.total_participants !== 'undefined') {
+            const totalParticipantsEl = document.getElementById('resultTotalParticipants');
+            if (totalParticipantsEl) totalParticipantsEl.textContent = payload.total_participants;
+
+            const topPercentEl = document.getElementById('resultTopPercent');
+            if (topPercentEl) {
+                if (payload.rank && payload.total_participants > 0) {
+                    topPercentEl.textContent = `Top ${((payload.rank / payload.total_participants) * 100).toFixed(1)}%`;
+                } else {
+                    topPercentEl.textContent = 'Unranked';
+                }
+            }
+        }
+    }
+
+    function renderLeaderboard(leaderboard) {
+        const list = document.getElementById('resultLeaderboardList');
+        if (!list || !Array.isArray(leaderboard)) return;
+
+        list.innerHTML = leaderboard.slice(0, 10).map((entry) => {
+            const rank = Number(entry.rank);
+            const rankDisplay = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
+            const isCurrentUser =
+                (resultAttemptUserId && Number(entry.user_id) === Number(resultAttemptUserId)) ||
+                (resultAttemptParticipantId && Number(entry.participant_id) === Number(resultAttemptParticipantId));
+
+            return `
+                <div class="list-group-item leaderboard-item ${isCurrentUser ? 'current-user-rank' : ''}">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="${rank === 1 ? 'medal-gold' : (rank === 2 ? 'medal-silver' : (rank === 3 ? 'medal-bronze' : ''))} fs-4 me-2">
+                                ${rankDisplay}
+                            </span>
+                            <strong class="ms-1">${entry.name ?? 'Unknown'}</strong>
+                            ${isCurrentUser ? '<span class="badge bg-success ms-2">You</span>' : ''}
+                            <small class="text-muted ms-2">(${entry.percentage ?? 0}%)</small>
+                        </div>
+                        <div>
+                            <span class="badge bg-primary">${entry.score ?? 0} pts</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    if (typeof window.initializeEcho === 'function') {
+        window.initializeEcho(resultQuizId, {
+            onLeaderboardUpdated(event) {
+                const leaderboard = Array.isArray(event.leaderboard) ? event.leaderboard : [];
+                renderLeaderboard(leaderboard);
+
+                const currentEntry = leaderboard.find((entry) =>
+                    (resultAttemptUserId && Number(entry.user_id) === Number(resultAttemptUserId)) ||
+                    (resultAttemptParticipantId && Number(entry.participant_id) === Number(resultAttemptParticipantId))
+                );
+
+                if (currentEntry) {
+                    updateResultSummary({
+                        rank: currentEntry.rank,
+                        total_participants: leaderboard.length,
+                    });
+                }
+            }
+        });
+    }
+
+    if (typeof window.initializeAttemptEcho === 'function') {
+        window.initializeAttemptEcho(resultAttemptId, {
+            onAttemptResultUpdated(event) {
+                updateResultSummary(event.payload || {});
+            }
+        });
     }
 </script>
 @endpush

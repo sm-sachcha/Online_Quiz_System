@@ -151,8 +151,9 @@
                 <h5 class="mb-0" id="questionText">{{ $currentQuestion->question_text }}</h5>
             </div>
             <div class="card-body">
+                <div id="questionInstructions">
                 @if($currentQuestion->question_type == 'multiple_choice')
-                    <div class="alert alert-info">
+                    <div class="alert alert-info" id="multipleChoiceAlert">
                         <i class="fas fa-check-double"></i> 
                         <strong>Multiple Select Question</strong> - Select ALL correct answers. Your answers will be submitted automatically when the timer ends.
                         <div class="mt-2">
@@ -161,6 +162,7 @@
                         </div>
                     </div>
                 @endif
+                </div>
 
                 <div id="optionsContainer">
                     @foreach($currentQuestion->options as $index => $option)
@@ -237,11 +239,11 @@
                 <hr>
                 <div class="d-flex justify-content-between">
                     <span>This Question:</span>
-                    <strong>{{ $currentQuestion->points }} pts</strong>
+                    <strong id="questionPoints">{{ $currentQuestion->points }} pts</strong>
                 </div>
                 <div class="d-flex justify-content-between">
                     <span>Time Limit:</span>
-                    <strong>{{ $currentQuestion->time_seconds }}s</strong>
+                    <strong id="questionTimeLimit">{{ $currentQuestion->time_seconds }}s</strong>
                 </div>
             </div>
         </div>
@@ -267,47 +269,54 @@
 <script>
     const quizId = {{ $quiz->id }};
     const attemptId = {{ $attempt->id }};
-    const questionId = {{ $currentQuestion->id }};
-    const questionType = '{{ $currentQuestion->question_type }}';
-    const timeSeconds = {{ (int) $remainingTimeSeconds }};
-    const questionDuration = {{ (int) $currentQuestion->time_seconds }};
     const preQuestionCountdownSeconds = 5;
-    const showAnswer = {{ $currentQuestion->show_answer ? 'true' : 'false' }};
-    const isMultipleChoice = questionType === 'multiple_choice';
-    
-    let timeLeft = parseInt(timeSeconds, 10);
+    const totalQuestions = {{ (int) $totalQuestions }};
+    let currentQuestionId = {{ $currentQuestion->id }};
+    let currentQuestionType = @json($currentQuestion->question_type);
+    let currentQuestionDuration = {{ (int) $currentQuestion->time_seconds }};
+    let currentQuestionNumber = {{ (int) $currentQuestionNumber }};
+    let questionStartSeconds = {{ (int) $remainingTimeSeconds }};
+    let currentShowAnswer = {{ $currentQuestion->show_answer ? 'true' : 'false' }};
+    let timeLeft = parseInt(questionStartSeconds, 10);
     let timerInterval;
     let answerSubmitted = false;
     let startTime = null;
     let isInternalNavigation = false;
     let selectedOptions = [];
-    let heartbeatInterval;
     let selectedOptionId = null;
+    let waitingForNextQuestion = false;
+    let attemptHeartbeatInterval = null;
+    let leaveSignalSent = false;
+    const csrfToken = '{{ csrf_token() }}';
 
-    // Set form values
+    function isMultipleChoiceQuestion() {
+        return currentQuestionType === 'multiple_choice';
+    }
+
     function setFormValues() {
-        document.getElementById('questionId').value = questionId;
-        document.getElementById('questionType').value = questionType;
+        document.getElementById('questionId').value = currentQuestionId;
+        document.getElementById('questionType').value = currentQuestionType;
+        document.getElementById('selectedOptions').value = '';
+        document.getElementById('optionId').value = '';
         
-        if (isMultipleChoice) {
+        if (isMultipleChoiceQuestion()) {
             document.getElementById('selectedOptions').value = JSON.stringify(selectedOptions);
         } else {
             document.getElementById('optionId').value = selectedOptionId || '';
         }
     }
 
-    // Submit answer when timer ends
     function submitAnswerOnTimerEnd() {
         if (answerSubmitted) return;
         
         const elapsedSincePageLoad = Math.floor((Date.now() - startTime) / 1000);
-        const timeTaken = Math.min((parseInt(questionDuration, 10) - parseInt(timeSeconds, 10)) + elapsedSincePageLoad, parseInt(questionDuration, 10));
+        const timeTaken = Math.min((parseInt(currentQuestionDuration, 10) - parseInt(questionStartSeconds, 10)) + elapsedSincePageLoad, parseInt(currentQuestionDuration, 10));
         document.getElementById('timeTaken').value = timeTaken;
         
         setFormValues();
         
         const formData = new FormData(document.getElementById('answerForm'));
-        const url = isMultipleChoice 
+        const url = isMultipleChoiceQuestion() 
             ? `/user/quiz/attempt/${quizId}/${attemptId}/submit-multiple`
             : `/user/quiz/attempt/${quizId}/${attemptId}/submit`;
         
@@ -317,7 +326,7 @@
             method: 'POST',
             body: formData,
             headers: {
-                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'X-CSRF-TOKEN': csrfToken,
                 'Accept': 'application/json'
             }
         })
@@ -343,12 +352,69 @@
         });
     }
 
+    function startAttemptHeartbeat() {
+        if (attemptHeartbeatInterval) {
+            return;
+        }
+
+        attemptHeartbeatInterval = setInterval(() => {
+            if (isInternalNavigation) {
+                return;
+            }
+
+            fetch(`/user/quiz/attempt/${quizId}/${attemptId}/heartbeat`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken,
+                    'Accept': 'application/json'
+                },
+                credentials: 'same-origin'
+            }).catch(() => {});
+        }, 15000);
+    }
+
+    function stopAttemptHeartbeat() {
+        if (!attemptHeartbeatInterval) {
+            return;
+        }
+
+        clearInterval(attemptHeartbeatInterval);
+        attemptHeartbeatInterval = null;
+    }
+
+    function notifyAttemptLeave() {
+        if (isInternalNavigation || leaveSignalSent) {
+            return;
+        }
+
+        leaveSignalSent = true;
+        stopAttemptHeartbeat();
+
+        const leaveData = new FormData();
+        leaveData.append('_token', csrfToken);
+
+        if (navigator.sendBeacon) {
+            navigator.sendBeacon(`/user/quiz/attempt/${quizId}/${attemptId}/leave`, leaveData);
+            return;
+        }
+
+        fetch(`/user/quiz/attempt/${quizId}/${attemptId}/leave`, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': csrfToken,
+                'Accept': 'application/json'
+            },
+            credentials: 'same-origin',
+            keepalive: true
+        }).catch(() => {});
+    }
+
     // Timer functions
     function startTimer() {
         startTime = Date.now();
         updateTimerDisplay();
         timerInterval = setInterval(() => {
-            if (!answerSubmitted) {
+            if (!answerSubmitted && !waitingForNextQuestion) {
                 timeLeft = Math.max(0, parseInt(timeLeft, 10) - 1);
                 updateTimerDisplay();
                 if (timeLeft <= 0) {
@@ -372,6 +438,131 @@
                 timerEl.classList.remove('timer-danger');
             }
         }
+    }
+
+    function getOptionTextFromButton(btn) {
+        const textNode = btn.querySelector('.option-text');
+        return textNode ? textNode.innerText : '';
+    }
+
+    function buildOptionsMarkup(options, questionType) {
+        return options.map((option, index) => `
+            <button class="option-btn"
+                    data-option-id="${option.id}"
+                    data-option-index="${index}"
+                    data-is-correct="${option.is_correct ? 'true' : 'false'}"
+                    data-question-type="${questionType}">
+                <div class="d-flex align-items-center">
+                    <span class="badge bg-secondary me-3" style="font-size: 1rem; min-width: 35px;">
+                        ${String.fromCharCode(65 + index)}
+                    </span>
+                    <span class="flex-grow-1 option-text">${option.text}</span>
+                    ${questionType === 'multiple_choice' ? '<i class="fas fa-check-circle selection-check" style="opacity: 0; font-size: 1.2rem;"></i>' : ''}
+                </div>
+            </button>
+        `).join('');
+    }
+
+    function bindOptionHandlers() {
+        const selectedCountSpan = document.getElementById('selectedCount');
+
+        if (isMultipleChoiceQuestion()) {
+            document.querySelectorAll('.option-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    if (answerSubmitted || waitingForNextQuestion) return;
+
+                    const optionId = parseInt(this.dataset.optionId, 10);
+                    const index = selectedOptions.indexOf(optionId);
+                    const checkIcon = this.querySelector('.selection-check');
+
+                    if (index === -1) {
+                        selectedOptions.push(optionId);
+                        this.classList.add('option-selected');
+                        if (checkIcon) checkIcon.style.opacity = '1';
+                    } else {
+                        selectedOptions.splice(index, 1);
+                        this.classList.remove('option-selected');
+                        if (checkIcon) checkIcon.style.opacity = '0';
+                    }
+
+                    if (selectedCountSpan) selectedCountSpan.textContent = selectedOptions.length;
+                });
+            });
+
+            return;
+        }
+
+        document.querySelectorAll('.option-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                if (answerSubmitted || waitingForNextQuestion) return;
+
+                document.querySelectorAll('.option-btn').forEach(button => {
+                    button.classList.remove('option-selected');
+                });
+
+                selectedOptionId = this.dataset.optionId;
+                this.classList.add('option-selected');
+            });
+        });
+    }
+
+    function renderQuestion(question) {
+        currentQuestionId = Number(question.question_id);
+        currentQuestionType = question.question_type;
+        currentQuestionDuration = Number(question.time_seconds);
+        currentQuestionNumber = Number(question.question_number);
+        currentShowAnswer = Boolean(question.show_answer);
+        questionStartSeconds = currentQuestionDuration;
+        timeLeft = currentQuestionDuration;
+        answerSubmitted = false;
+        waitingForNextQuestion = false;
+        startTime = null;
+        selectedOptions = [];
+        selectedOptionId = null;
+
+        document.getElementById('questionText').textContent = question.question_text;
+        document.getElementById('currentQuestionNum').textContent = currentQuestionNumber;
+        document.getElementById('questionPoints').textContent = `${question.points} pts`;
+        document.getElementById('questionTimeLimit').textContent = `${question.time_seconds}s`;
+        document.getElementById('optionsContainer').innerHTML = buildOptionsMarkup(question.options || [], question.question_type);
+
+        const instructions = document.getElementById('questionInstructions');
+        if (instructions) {
+            if (question.question_type === 'multiple_choice') {
+                const correctCount = (question.options || []).filter(option => option.is_correct).length;
+                instructions.innerHTML = `
+                    <div class="alert alert-info" id="multipleChoiceAlert">
+                        <i class="fas fa-check-double"></i>
+                        <strong>Multiple Select Question</strong> - Select ALL correct answers. Your answers will be submitted automatically when the timer ends.
+                        <div class="mt-2">
+                            <span class="badge bg-primary">Selected: <span id="selectedCount">0</span></span>
+                            <span class="badge bg-secondary">Correct answers: ${correctCount}</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                instructions.innerHTML = '';
+            }
+        }
+
+        const feedback = document.getElementById('feedback');
+        if (feedback) {
+            feedback.style.display = 'none';
+            feedback.innerHTML = '';
+        }
+
+        const waitingMsg = document.getElementById('answerWaitingMessage');
+        if (waitingMsg) waitingMsg.style.display = 'block';
+
+        const loader = document.getElementById('nextQuestionLoader');
+        if (loader) loader.style.display = 'none';
+
+        if (timerInterval) clearInterval(timerInterval);
+        updateTimerDisplay();
+        bindOptionHandlers();
+        setFormValues();
+        hideLoading();
+        showQuestionStartCountdown(preQuestionCountdownSeconds, startTimer);
     }
 
     function showQuestionStartCountdown(seconds, onComplete) {
@@ -425,7 +616,7 @@
             `;
         } else {
             let correctAnswerHtml = '';
-            if (showAnswer && correctAnswerText) {
+            if (currentShowAnswer && correctAnswerText) {
                 correctAnswerHtml = `<div class="mt-2 p-2 bg-light rounded"><i class="fas fa-lightbulb text-warning"></i> <strong>Correct answer:</strong> ${correctAnswerText}</div>`;
             }
             feedbackDiv.className = 'feedback-message feedback-incorrect';
@@ -462,18 +653,10 @@
         if (loader) loader.style.display = 'block';
         const waitingMsg = document.getElementById('answerWaitingMessage');
         if (waitingMsg) waitingMsg.style.display = 'none';
-    }
-
-    function loadNextQuestion() {
-        showNextQuestionLoader();
-        setTimeout(() => {
-            isInternalNavigation = true;
-            window.location.reload();
-        }, 1500);
+        waitingForNextQuestion = true;
     }
 
     function updateUI(data) {
-        // Update scores
         const scoreEl = document.getElementById('score');
         const pointsDisplayEl = document.getElementById('pointsDisplay');
         const correctCountEl = document.getElementById('correctCount');
@@ -496,8 +679,7 @@
         const waitingMsg = document.getElementById('answerWaitingMessage');
         if (waitingMsg) waitingMsg.style.display = 'none';
         
-        // Show correct/incorrect styling
-        if (isMultipleChoice) {
+        if (isMultipleChoiceQuestion()) {
             allButtons.forEach(btn => {
                 const isCorrectOption = btn.dataset.isCorrect === 'true';
                 if (isCorrectOption) {
@@ -508,11 +690,11 @@
             });
             
             let correctAnswerText = '';
-            if (showAnswer) {
+            if (currentShowAnswer) {
                 allButtons.forEach(btn => {
                     if (btn.dataset.isCorrect === 'true') {
-                        const answerSpan = btn.querySelector('span:last-child');
-                        if (answerSpan) correctAnswerText += (correctAnswerText ? ', ' : '') + answerSpan.innerText;
+                        const answerText = getOptionTextFromButton(btn);
+                        if (answerText) correctAnswerText += (correctAnswerText ? ', ' : '') + answerText;
                     }
                 });
             }
@@ -528,12 +710,11 @@
             });
             
             let correctAnswerText = '';
-            if (showAnswer && !data.is_correct && data.correct_option_id) {
+            if (currentShowAnswer && !data.is_correct && data.correct_option_id) {
                 allButtons.forEach(btn => {
                     if (btn.dataset.optionId == data.correct_option_id) {
                         btn.classList.add('option-correct');
-                        const answerSpan = btn.querySelector('span:last-child');
-                        if (answerSpan) correctAnswerText = answerSpan.innerText;
+                        correctAnswerText = getOptionTextFromButton(btn);
                     }
                 });
             }
@@ -544,84 +725,23 @@
         hideLoading();
         
         if (data.is_completed) {
-            setTimeout(() => {
-                isInternalNavigation = true;
-                window.location.href = `/user/quiz/result/${quizId}/${attemptId}`;
-            }, 2000);
+            showNextQuestionLoader();
         } else {
-            loadNextQuestion();
+            showNextQuestionLoader();
         }
     }
 
-    // Event listeners - save selections without submitting
-    if (isMultipleChoice) {
-        const selectedCountSpan = document.getElementById('selectedCount');
-        document.querySelectorAll('.option-btn').forEach(btn => {
-            btn.addEventListener('click', function(e) {
-                if (answerSubmitted) return;
-                const optionId = parseInt(this.dataset.optionId);
-                const index = selectedOptions.indexOf(optionId);
-                const checkIcon = this.querySelector('.selection-check');
-                if (index === -1) {
-                    selectedOptions.push(optionId);
-                    this.classList.add('option-selected');
-                    if (checkIcon) checkIcon.style.opacity = '1';
-                } else {
-                    selectedOptions.splice(index, 1);
-                    this.classList.remove('option-selected');
-                    if (checkIcon) checkIcon.style.opacity = '0';
-                }
-                if (selectedCountSpan) selectedCountSpan.textContent = selectedOptions.length;
-            });
-        });
-    } else {
-        document.querySelectorAll('.option-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                if (answerSubmitted) return;
-                // Remove selected class from all buttons
-                document.querySelectorAll('.option-btn').forEach(b => {
-                    b.classList.remove('option-selected');
-                });
-                selectedOptionId = this.dataset.optionId;
-                this.classList.add('option-selected');
-            });
-        });
-    }
-
-    // Heartbeat to keep user active
-    function sendHeartbeat() {
-        if (answerSubmitted) return;
-        
-        fetch(`/user/quiz/attempt/${quizId}/${attemptId}/heartbeat`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': '{{ csrf_token() }}'
-            },
-            body: JSON.stringify({})
-        }).catch(err => console.error('Heartbeat error:', err));
-    }
-
-    heartbeatInterval = setInterval(sendHeartbeat, 15000);
+    bindOptionHandlers();
+    startAttemptHeartbeat();
 
     // Handle page leave
     window.addEventListener('beforeunload', function() {
-        if (heartbeatInterval) clearInterval(heartbeatInterval);
         if (timerInterval) clearInterval(timerInterval);
+        notifyAttemptLeave();
+    });
 
-        if (answerSubmitted || isInternalNavigation) {
-            return;
-        }
-        
-        fetch(`/user/quiz/attempt/${quizId}/${attemptId}/leave`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': '{{ csrf_token() }}'
-            },
-            keepalive: true,
-            body: JSON.stringify({})
-        }).catch(() => {});
+    window.addEventListener('pagehide', function() {
+        notifyAttemptLeave();
     });
 
     // Anti-cheat
@@ -644,13 +764,64 @@
         return false;
     });
 
-    // Start question after a 5-second ready countdown
-    timeLeft = parseInt(questionDuration, 10);
+    if (typeof window.initializeEcho === 'function') {
+        window.initializeEcho(quizId, {
+            onQuizEnded() {
+                if (answerSubmitted) {
+                    return;
+                }
+
+                answerSubmitted = true;
+
+                if (timerInterval) clearInterval(timerInterval);
+
+                showNotification('The quiz was ended by the admin.', 'warning');
+
+                setTimeout(() => {
+                    stopAttemptHeartbeat();
+                    isInternalNavigation = true;
+                    window.location.href = `/user/quiz/result/${quizId}/${attemptId}`;
+                }, 1200);
+            }
+        });
+    }
+
+    if (typeof window.initializeAttemptEcho === 'function') {
+        window.initializeAttemptEcho(attemptId, {
+            onAttemptQuestionBroadcasted(event) {
+                if (!event || Number(event.question_id) === Number(currentQuestionId)) {
+                    return;
+                }
+
+                renderQuestion(event);
+            },
+            onAttemptResultUpdated(event) {
+                const payload = event.payload || {};
+
+                if (!payload.redirect_url) {
+                    return;
+                }
+
+                showNotification(
+                    payload.passed ? 'Quiz completed! Preparing your result...' : 'Quiz finished. Preparing your result...',
+                    payload.passed ? 'success' : 'warning'
+                );
+
+                setTimeout(() => {
+                    stopAttemptHeartbeat();
+                    isInternalNavigation = true;
+                    window.location.href = payload.redirect_url;
+                }, 1200);
+            }
+        });
+    }
+
+    timeLeft = parseInt(questionStartSeconds, 10);
     updateTimerDisplay();
     showQuestionStartCountdown(preQuestionCountdownSeconds, startTimer);
     
     console.log('Quiz session initialized - Auto-submit on timer end', {
-        quizId, attemptId, questionId, timeSeconds, isMultipleChoice
+        quizId, attemptId, currentQuestionId, questionStartSeconds, currentQuestionType
     });
 </script>
 @endpush

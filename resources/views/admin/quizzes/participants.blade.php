@@ -417,8 +417,8 @@
     $(document).ready(function() {
         const quizId = {{ $quiz->id }};
         const authUserId = {{ Auth::id() ?? 0 }};
+        const initialPayload = @json($payload);
         let activeFilter = 'all';
-        let isRefreshing = false;
         
         function escapeHtml(text) {
             const div = document.createElement('div');
@@ -569,37 +569,10 @@
             applyFilter(activeFilter);
         }
 
-        function refreshParticipantsData(showBusy = false) {
-            if (isRefreshing) return;
-            isRefreshing = true;
-
-            const refreshBtn = document.getElementById('refreshParticipantsBtn');
-            const originalBtnHtml = refreshBtn ? refreshBtn.innerHTML : null;
-            if (showBusy && refreshBtn) {
-                refreshBtn.disabled = true;
-                refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing';
-            }
-
-            fetch(`/admin/quizzes/${quizId}/participants-json`, {
-                headers: {
-                    'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                },
-                credentials: 'same-origin'
-            })
-            .then(response => response.json())
-            .then(payload => {
-                updateCounters(payload);
-                updateParticipantsTable(payload);
-            })
-            .catch(error => console.error('Refresh error:', error))
-            .finally(() => {
-                isRefreshing = false;
-                if (refreshBtn && originalBtnHtml !== null) {
-                    refreshBtn.disabled = false;
-                    refreshBtn.innerHTML = originalBtnHtml;
-                }
-            });
+        function applyRealtimePayload(payload) {
+            if (!payload) return;
+            updateCounters(payload);
+            updateParticipantsTable(payload);
         }
 
         $('.filter-btn').click(function() {
@@ -607,7 +580,7 @@
         });
 
         $('#refreshParticipantsBtn').on('click', function() {
-            refreshParticipantsData(true);
+            window.location.reload();
         });
         
         // Start Quiz Button Handler
@@ -632,7 +605,6 @@
                 .then(data => {
                     if (data.success) {
                         alert('Quiz started successfully! ' + (data.participants_notified || 0) + ' participants notified.');
-                        refreshParticipantsData(true);
                         setTimeout(() => window.location.reload(), 300);
                     } else {
                         alert('' + (data.error || 'Failed to start quiz. Please try again.'));
@@ -672,7 +644,6 @@
                     .then(data => {
                         if (data.success) {
                             alert('Quiz ended successfully.');
-                            refreshParticipantsData(true);
                             setTimeout(() => window.location.reload(), 300);
                         } else {
                             alert('' + (data.error || 'Failed to end quiz. Please try again.'));
@@ -689,17 +660,20 @@
                 }
             });
         }
-        
+
+        applyRealtimePayload(initialPayload);
         applyFilter('all');
 
-        // Auto-refresh every second without full page reload
-        let autoRefresh = setInterval(function() {
-            refreshParticipantsData(false);
-        }, 1000);
-        
-        window.addEventListener('beforeunload', function() {
-            clearInterval(autoRefresh);
-        });
+        if (typeof window.initializeEcho === 'function') {
+            window.initializeEcho(quizId, {
+                onParticipantsUpdated(event) {
+                    applyRealtimePayload(event.payload || {});
+                },
+                onQuizEnded() {
+                    setTimeout(() => window.location.reload(), 400);
+                }
+            });
+        }
     });
     
     function copyQuizLink() {

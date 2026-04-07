@@ -3,6 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -14,11 +15,15 @@ return new class extends Migration
         DB::statement("UPDATE quiz_participants SET status = 'registered' WHERE status = 'registered'");
         
         // Then modify the enum to include all needed values
-        DB::statement("ALTER TABLE quiz_participants MODIFY status ENUM('joined', 'taking_quiz', 'left', 'registered') DEFAULT 'registered'");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE quiz_participants MODIFY status ENUM('joined', 'taking_quiz', 'left', 'registered') DEFAULT 'registered'");
+        }
     }
 
     public function down(): void
     {
-        DB::statement("ALTER TABLE quiz_participants MODIFY status ENUM('joined', 'left', 'registered') DEFAULT 'registered'");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE quiz_participants MODIFY status ENUM('joined', 'left', 'registered') DEFAULT 'registered'");
+        }
     }
 };

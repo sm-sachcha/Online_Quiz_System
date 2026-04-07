@@ -9,11 +9,15 @@ return new class extends Migration
 {
     public function up()
     {
-        DB::statement("ALTER TABLE quiz_participants MODIFY COLUMN status ENUM('registered', 'joined', 'taking_quiz', 'completed', 'disqualified', 'left') DEFAULT 'registered'");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE quiz_participants MODIFY COLUMN status ENUM('registered', 'joined', 'taking_quiz', 'completed', 'disqualified', 'left') DEFAULT 'registered'");
+        }
     }
 
     public function down()
     {
-        DB::statement("ALTER TABLE quiz_participants MODIFY COLUMN status ENUM('registered', 'joined', 'taking_quiz', 'disqualified', 'left') DEFAULT 'registered'");
+        if (DB::getDriverName() !== 'sqlite') {
+            DB::statement("ALTER TABLE quiz_participants MODIFY COLUMN status ENUM('registered', 'joined', 'taking_quiz', 'disqualified', 'left') DEFAULT 'registered'");
+        }
     }
 };

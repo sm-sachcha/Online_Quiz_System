@@ -9,6 +9,8 @@ use App\Models\QuizParticipant;
 use App\Models\QuizAttempt;
 use App\Events\QuizStarted;
 use App\Events\QuizEnded;
+use App\Events\QuizParticipantsUpdated;
+use App\Services\QuizParticipantsPayloadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -16,6 +18,11 @@ use Illuminate\Support\Facades\Log;
 
 class QuizController extends Controller
 {
+    public function __construct(
+        private QuizParticipantsPayloadService $quizParticipantsPayloadService
+    ) {
+    }
+
     public function index()
     {
         $user = Auth::user();
@@ -296,6 +303,7 @@ class QuizController extends Controller
             ->count();
 
         broadcast(new QuizStarted($quiz))->toOthers();
+        broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
         
         $message = 'Quiz has been started! ' . $participants . ' participants have been notified.';
         
@@ -327,8 +335,9 @@ class QuizController extends Controller
             'is_published' => false,
             'ends_at' => now()
         ]);
-        
+
         broadcast(new QuizEnded($quiz))->toOthers();
+        broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
         
         Log::info('Quiz ended manually by admin', [
             'quiz_id' => $quiz->id,
@@ -381,7 +390,7 @@ class QuizController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        return response()->json($this->buildParticipantsPayload($quiz));
+        return response()->json($this->quizParticipantsPayloadService->build($quiz));
     }
     
 
@@ -395,7 +404,7 @@ public function participants(Quiz $quiz)
         abort(403, 'You do not have permission to view participants for this quiz.');
     }
     
-    $payload = $this->buildParticipantsPayload($quiz);
+    $payload = $this->quizParticipantsPayloadService->build($quiz);
     
     return view('admin.quizzes.participants', compact(
         'quiz', 
@@ -415,7 +424,9 @@ public function participants(Quiz $quiz)
                 return response()->json(['success' => false, 'message' => 'Participant not found'], 404);
             }
             
+            $quiz = $participant->quiz;
             $participant->delete();
+            broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
             
             return response()->json(['success' => true, 'message' => 'Participant removed successfully']);
             
@@ -439,92 +450,4 @@ public function participants(Quiz $quiz)
         ]);
     }
 
-    private function buildParticipantsPayload(Quiz $quiz): array
-    {
-        $participantKey = function ($userId, $participantId) {
-            if ($userId) {
-                return 'user:' . $userId;
-            }
-
-            if ($participantId) {
-                return 'participant:' . $participantId;
-            }
-
-            return null;
-        };
-
-        $attempts = QuizAttempt::where('quiz_id', $quiz->id)
-            ->whereIn('status', ['in_progress', 'completed'])
-            ->orderByDesc('created_at')
-            ->get();
-
-        $inProgressKeys = $attempts
-            ->where('status', 'in_progress')
-            ->map(fn ($attempt) => $participantKey($attempt->user_id, $attempt->participant_id))
-            ->filter()
-            ->unique()
-            ->values();
-
-        $completedKeys = $attempts
-            ->where('status', 'completed')
-            ->map(fn ($attempt) => $participantKey($attempt->user_id, $attempt->participant_id))
-            ->filter()
-            ->unique()
-            ->values();
-
-        $latestCompletedByKey = $attempts
-            ->where('status', 'completed')
-            ->mapWithKeys(function ($attempt) use ($participantKey) {
-                return [$participantKey($attempt->user_id, $attempt->participant_id) => $attempt];
-            });
-
-        $participants = QuizParticipant::with('user')
-            ->where('quiz_id', $quiz->id)
-            ->orderByRaw("FIELD(status, 'joined', 'taking_quiz', 'completed', 'left')")
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function ($participant) use ($participantKey, $inProgressKeys, $completedKeys, $latestCompletedByKey) {
-                $key = $participantKey($participant->user_id, $participant->id);
-                $effectiveStatus = $participant->status;
-
-                if ($key && $inProgressKeys->contains($key)) {
-                    $effectiveStatus = 'taking_quiz';
-                } elseif ($key && $completedKeys->contains($key)) {
-                    $effectiveStatus = 'completed';
-                }
-
-                $latestAttempt = $key ? $latestCompletedByKey->get($key) : null;
-
-                return [
-                    'id' => $participant->id,
-                    'user_id' => $participant->user_id,
-                    'participant_key' => $key,
-                    'name' => $participant->user ? $participant->user->name : ($participant->guest_name ?? 'Guest'),
-                    'email' => $participant->user ? $participant->user->email : null,
-                    'is_guest' => $participant->is_guest,
-                    'status' => $participant->status,
-                    'effective_status' => $effectiveStatus,
-                    'joined_at' => optional($participant->joined_at)->toIso8601String(),
-                    'updated_at' => optional($participant->updated_at)->toIso8601String(),
-                    'latest_attempt_id' => $latestAttempt?->id,
-                ];
-            })
-            ->values();
-
-        $lobbyUsers = $participants->where('effective_status', 'joined')->count();
-        $takingQuizCount = $participants->where('effective_status', 'taking_quiz')->count();
-        $completedParticipants = $participants->where('effective_status', 'completed')->count();
-        $leftParticipants = $participants->where('effective_status', 'left')->count();
-
-        return [
-            'participants' => $participants,
-            'activeParticipants' => $lobbyUsers + $takingQuizCount,
-            'takingQuizCount' => $takingQuizCount,
-            'lobbyUsers' => $lobbyUsers,
-            'completedParticipants' => $completedParticipants,
-            'leftParticipants' => $leftParticipants,
-            'isQuizStarted' => $quiz->is_published && $quiz->scheduled_at && $quiz->scheduled_at <= now(),
-            'hasQuestions' => $quiz->questions()->count() > 0,
-        ];
-    }
 }

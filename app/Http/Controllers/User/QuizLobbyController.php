@@ -8,12 +8,19 @@ use App\Models\QuizParticipant;
 use App\Models\QuizAttempt;
 use App\Events\ParticipantJoined;
 use App\Events\ParticipantLeft;
+use App\Events\QuizParticipantsUpdated;
+use App\Services\QuizParticipantsPayloadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 class QuizLobbyController extends Controller
 {
+    public function __construct(
+        private QuizParticipantsPayloadService $quizParticipantsPayloadService
+    ) {
+    }
+
     public function index(Quiz $quiz)
     {
         if (!$quiz->is_published) {
@@ -168,9 +175,11 @@ class QuizLobbyController extends Controller
                 
                 return [
                     'id' => $p->id,
+                    'user_id' => $p->user_id,
                     'name' => $displayName,
                     'is_guest' => $p->is_guest,
                     'joined_at' => $p->joined_at,
+                    'updated_at' => $p->updated_at,
                     'status' => $p->status
                 ];
             });
@@ -367,12 +376,9 @@ class QuizLobbyController extends Controller
             
             // Broadcast to other participants
             try {
-                $userObj = $user ?: (object)[
-                    'id' => null,
-                    'name' => $participant->guest_name,
-                    'is_guest' => true
-                ];
-                broadcast(new ParticipantJoined($userObj, $quiz))->toOthers();
+                $participant->loadMissing('user');
+                broadcast(new ParticipantJoined($participant, $quiz))->toOthers();
+                broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
             } catch (\Exception $e) {
                 Log::warning('Broadcast failed: ' . $e->getMessage());
             }
@@ -430,8 +436,9 @@ class QuizLobbyController extends Controller
                 ]);
                 
                 try {
-                    $userObj = $user ?: (object)['id' => null, 'name' => $participantName];
-                    broadcast(new ParticipantLeft($userObj, $quiz))->toOthers();
+                    $participant->loadMissing('user');
+                    broadcast(new ParticipantLeft($participant, $quiz))->toOthers();
+                    broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
                 } catch (\Exception $e) {
                     Log::warning('Broadcast failed: ' . $e->getMessage());
                 }

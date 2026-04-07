@@ -42,7 +42,7 @@ class UpdateQuizLobby implements ShouldQueue
                 ->map(function ($participant) {
                     $name = $participant->is_guest
                         ? ($participant->guest_name ?: 'Guest')
-                        : ($participant->user->name ?? 'Unknown User');
+                        : (optional($participant->user)->name ?? 'Unknown User');
 
                     return [
                         'id' => $participant->id,

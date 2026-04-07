@@ -20,10 +20,10 @@ class SendGoodbyeMessage implements ShouldQueue
             // Simple logging - no notification system needed
             $userName = 'Guest';
             $userId = 'guest';
-            
-            if ($event->user) {
-                $userId = $event->user->id ?? 'guest';
-                $userName = $event->user->name ?? 'Guest';
+
+            if (!empty($event->user) && is_array($event->user)) {
+                $userId = $event->user['id'] ?? 'guest';
+                $userName = $event->user['name'] ?? 'Guest';
             }
             
             $quizTitle = $event->quiz->title ?? 'Unknown Quiz';

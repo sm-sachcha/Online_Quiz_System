@@ -20,10 +20,15 @@ class SendWelcomeMessage implements ShouldQueue
             // Simple logging - no notification system needed
             $userName = 'Guest';
             $userId = 'guest';
-            
-            if ($event->user) {
-                $userId = $event->user->id ?? 'guest';
-                $userName = $event->user->name ?? 'Guest';
+
+            if ($event->participant) {
+                $userId = $event->participant->user_id
+                    ?? $event->participant->id
+                    ?? 'guest';
+                $userName = $event->participant->guest_name
+                    ?? optional($event->participant->user)->name
+                    ?? $event->participant->name
+                    ?? 'Guest';
             }
             
             $quizTitle = $event->quiz->title ?? 'Unknown Quiz';
