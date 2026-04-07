@@ -2,9 +2,9 @@
 
 namespace App\Events;
 
+use Illuminate\Broadcasting\Channel;
 use App\Models\Quiz;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -24,7 +24,7 @@ class QuizEnded implements ShouldBroadcast
 
     public function broadcastOn()
     {
-        return new PresenceChannel('quiz.' . $this->quiz->id);
+        return new Channel('quiz.' . $this->quiz->id);
     }
 
     public function broadcastAs()

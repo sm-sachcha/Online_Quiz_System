@@ -40,10 +40,17 @@ class UpdateQuizLobby implements ShouldQueue
                 ->where('status', 'joined')
                 ->get()
                 ->map(function ($participant) {
+                    $name = $participant->is_guest
+                        ? ($participant->guest_name ?: 'Guest')
+                        : ($participant->user->name ?? 'Unknown User');
+
                     return [
-                        'id' => $participant->user->id ?? $participant->id,
-                        'name' => $participant->user->name ?? 'Guest',
-                        'joined_at' => $participant->joined_at
+                        'id' => $participant->id,
+                        'user_id' => $participant->user_id,
+                        'name' => $name,
+                        'is_guest' => (bool) $participant->is_guest,
+                        'status' => $participant->status,
+                        'joined_at' => $participant->joined_at,
                     ];
                 });
 

@@ -2,10 +2,10 @@
 
 namespace App\Events;
 
+use Illuminate\Broadcasting\Channel;
 use App\Models\User;
 use App\Models\Quiz;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -45,7 +45,7 @@ class ParticipantLeft implements ShouldBroadcast
 
     public function broadcastOn()
     {
-        return new PresenceChannel('quiz.' . $this->quiz->id);
+        return new Channel('quiz.' . $this->quiz->id);
     }
 
     public function broadcastAs()
@@ -56,10 +56,13 @@ class ParticipantLeft implements ShouldBroadcast
     public function broadcastWith()
     {
         return [
-            'user_id' => $this->user['id'],
-            'user_name' => $this->user['name'],
-            'is_guest' => $this->user['is_guest'],
-            'left_at' => now(),
+            'participant' => [
+                'id' => $this->user['id'],
+                'user_id' => $this->user['id'],
+                'name' => $this->user['name'],
+                'is_guest' => $this->user['is_guest'],
+                'left_at' => now(),
+            ],
         ];
     }
 }

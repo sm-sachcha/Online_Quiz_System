@@ -315,49 +315,56 @@
             if (spinner) spinner.remove();
         };
         
-        // Initialize Pusher and Echo
+        // Initialize the shared quiz channel with Laravel Echo / Reverb.
         window.initializeEcho = function(quizId, callbacks) {
-            if (typeof window.Echo === 'undefined' && typeof Pusher !== 'undefined') {
-                window.Echo = new Echo({
-                    broadcaster: 'pusher',
-                    key: '{{ env('PUSHER_APP_KEY') }}',
-                    cluster: '{{ env('PUSHER_APP_CLUSTER') }}',
-                    forceTLS: false,
-                    enabledTransports: ['ws', 'wss'],
-                    authEndpoint: '/broadcasting/auth',
-                    auth: {
-                        headers: {
-                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-                        }
-                    }
-                });
+            if (!quizId || typeof window.Echo === 'undefined') {
+                return null;
             }
-            
-            if (quizId && window.Echo) {
-                const channel = window.Echo.channel(`quiz.${quizId}`);
-                
-                if (callbacks) {
-                    if (callbacks.onQuizStarted) {
-                        channel.listen('.quiz.started', callbacks.onQuizStarted);
-                    }
-                    if (callbacks.onQuizEnded) {
-                        channel.listen('.quiz.ended', callbacks.onQuizEnded);
-                    }
-                    if (callbacks.onLeaderboardUpdated) {
-                        channel.listen('.leaderboard.updated', callbacks.onLeaderboardUpdated);
-                    }
-                    if (callbacks.onParticipantJoined) {
-                        channel.listen('.participant.joined', callbacks.onParticipantJoined);
-                    }
-                    if (callbacks.onParticipantLeft) {
-                        channel.listen('.participant.left', callbacks.onParticipantLeft);
-                    }
+
+            const channelName = `quiz.${quizId}`;
+
+            try {
+                window.Echo.leaveChannel(channelName);
+            } catch (error) {
+                console.debug('Echo channel reset skipped', error);
+            }
+
+            const channel = window.Echo.channel(channelName);
+
+            if (callbacks) {
+                if (callbacks.onQuizStarted) {
+                    channel.listen('.quiz.started', callbacks.onQuizStarted);
                 }
-                
-                return channel;
+                if (callbacks.onQuizEnded) {
+                    channel.listen('.quiz.ended', callbacks.onQuizEnded);
+                }
+                if (callbacks.onLeaderboardUpdated) {
+                    channel.listen('.leaderboard.updated', callbacks.onLeaderboardUpdated);
+                }
+                if (callbacks.onParticipantJoined) {
+                    channel.listen('.participant.joined', callbacks.onParticipantJoined);
+                }
+                if (callbacks.onParticipantLeft) {
+                    channel.listen('.participant.left', callbacks.onParticipantLeft);
+                }
+                if (callbacks.onLobbyUpdated) {
+                    channel.listen('.lobby.updated', callbacks.onLobbyUpdated);
+                }
+                if (callbacks.onQuestionBroadcasted) {
+                    channel.listen('.question.broadcasted', callbacks.onQuestionBroadcasted);
+                }
+                if (callbacks.onTimerSynced) {
+                    channel.listen('.timer.synced', callbacks.onTimerSynced);
+                }
+                if (callbacks.onAnswerSubmitted) {
+                    channel.listen('.answer.submitted', callbacks.onAnswerSubmitted);
+                }
+                if (callbacks.onUserDisconnected) {
+                    channel.listen('.user.disconnected', callbacks.onUserDisconnected);
+                }
             }
-            
-            return null;
+
+            return channel;
         };
         
         // Show countdown when quiz starts

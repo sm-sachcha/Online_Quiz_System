@@ -3,8 +3,8 @@
 namespace App\Events;
 
 use App\Models\UserAnswer;
+use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -25,7 +25,7 @@ class AnswerSubmitted implements ShouldBroadcast
     {
         try {
             if ($this->answer && $this->answer->quizAttempt && $this->answer->quizAttempt->quiz) {
-                return new PresenceChannel('quiz.' . $this->answer->quizAttempt->quiz_id);
+                return new Channel('quiz.' . $this->answer->quizAttempt->quiz_id);
             }
         } catch (\Exception $e) {
             Log::warning('AnswerSubmitted broadcast failed: ' . $e->getMessage());

@@ -294,6 +294,8 @@ class QuizController extends Controller
         $participants = QuizParticipant::where('quiz_id', $quiz->id)
             ->where('status', 'joined')
             ->count();
+
+        broadcast(new QuizStarted($quiz))->toOthers();
         
         $message = 'Quiz has been started! ' . $participants . ' participants have been notified.';
         

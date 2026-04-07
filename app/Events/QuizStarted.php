@@ -5,7 +5,6 @@ namespace App\Events;
 use App\Models\Quiz;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -25,7 +24,7 @@ class QuizStarted implements ShouldBroadcast
 
     public function broadcastOn()
     {
-        return new PresenceChannel('quiz.' . $this->quiz->id);
+        return new Channel('quiz.' . $this->quiz->id);
     }
 
     public function broadcastAs()
@@ -40,6 +39,7 @@ class QuizStarted implements ShouldBroadcast
             'title' => $this->quiz->title,
             'start_time' => $this->startTime->toIso8601String(),
             'duration' => $this->quiz->duration_minutes,
+            'redirect_url' => route('user.quiz.start', $this->quiz),
         ];
     }
 }

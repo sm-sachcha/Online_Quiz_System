@@ -2,10 +2,10 @@
 
 namespace App\Events;
 
+use Illuminate\Broadcasting\Channel;
 use App\Models\User;
 use App\Models\Quiz;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
@@ -25,7 +25,7 @@ class ParticipantJoined implements ShouldBroadcast
 
     public function broadcastOn()
     {
-        return new PresenceChannel('quiz.' . $this->quiz->id);
+        return new Channel('quiz.' . $this->quiz->id);
     }
 
     public function broadcastAs()
@@ -41,8 +41,9 @@ class ParticipantJoined implements ShouldBroadcast
                 'user_id' => $this->participant->user_id ?? null,
                 'name' => $this->participant->guest_name ?? ($this->participant->name ?? 'Guest'),
                 'is_guest' => !isset($this->participant->user_id) || !$this->participant->user_id,
-                'joined_at' => now()
-            ]
+                'status' => $this->participant->status ?? 'joined',
+                'joined_at' => now(),
+            ],
         ];
     }
 }
