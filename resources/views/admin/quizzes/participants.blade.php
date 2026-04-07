@@ -692,10 +692,10 @@
         
         applyFilter('all');
 
-        // Auto-refresh every 10 seconds without full page reload
+        // Auto-refresh every second without full page reload
         let autoRefresh = setInterval(function() {
             refreshParticipantsData(false);
-        }, 10000);
+        }, 1000);
         
         window.addEventListener('beforeunload', function() {
             clearInterval(autoRefresh);

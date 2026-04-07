@@ -241,7 +241,7 @@
                 </div>
                 <div class="d-flex justify-content-between">
                     <span>Time Limit:</span>
-                    <strong>{{ $remainingTimeSeconds }}s</strong>
+                    <strong>{{ $currentQuestion->time_seconds }}s</strong>
                 </div>
             </div>
         </div>
@@ -271,13 +271,14 @@
     const questionType = '{{ $currentQuestion->question_type }}';
     const timeSeconds = {{ (int) $remainingTimeSeconds }};
     const questionDuration = {{ (int) $currentQuestion->time_seconds }};
+    const preQuestionCountdownSeconds = 5;
     const showAnswer = {{ $currentQuestion->show_answer ? 'true' : 'false' }};
     const isMultipleChoice = questionType === 'multiple_choice';
     
     let timeLeft = parseInt(timeSeconds, 10);
     let timerInterval;
     let answerSubmitted = false;
-    let startTime = Date.now();
+    let startTime = null;
     let isInternalNavigation = false;
     let selectedOptions = [];
     let heartbeatInterval;
@@ -344,6 +345,7 @@
 
     // Timer functions
     function startTimer() {
+        startTime = Date.now();
         updateTimerDisplay();
         timerInterval = setInterval(() => {
             if (!answerSubmitted) {
@@ -370,6 +372,38 @@
                 timerEl.classList.remove('timer-danger');
             }
         }
+    }
+
+    function showQuestionStartCountdown(seconds, onComplete) {
+        let countdown = seconds;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'quiz-start-overlay';
+        overlay.innerHTML = `
+            <div class="countdown-box">
+                <div class="countdown-number" id="questionStartCountdownNumber">${countdown}</div>
+                <div class="countdown-label">Question Starting</div>
+                <div class="countdown-sub">Get ready to answer...</div>
+            </div>
+        `;
+
+        document.body.appendChild(overlay);
+
+        const interval = setInterval(() => {
+            countdown--;
+            const countEl = document.getElementById('questionStartCountdownNumber');
+            if (countEl) {
+                countEl.textContent = Math.max(countdown, 0);
+            }
+
+            if (countdown <= 0) {
+                clearInterval(interval);
+                overlay.remove();
+                if (typeof onComplete === 'function') {
+                    onComplete();
+                }
+            }
+        }, 1000);
     }
 
     function showFeedback(isCorrect, pointsEarned, explanation, correctAnswerText) {
@@ -610,8 +644,10 @@
         return false;
     });
 
-    // Start timer
-    startTimer();
+    // Start question after a 5-second ready countdown
+    timeLeft = parseInt(questionDuration, 10);
+    updateTimerDisplay();
+    showQuestionStartCountdown(preQuestionCountdownSeconds, startTimer);
     
     console.log('Quiz session initialized - Auto-submit on timer end', {
         quizId, attemptId, questionId, timeSeconds, isMultipleChoice

@@ -334,11 +334,18 @@ class QuizLobbyController extends Controller
                     ], 422);
                 }
                 
-                // Store guest name in session
-                session(['guest_name' => $guestName]);
-                
                 // Check if guest already exists
                 $participant = $this->findGuestParticipantBySession($quiz);
+
+                if ($this->isGuestNameAlreadyTaken($quiz, $guestName, $participant?->id)) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'This name is already being used in the lobby. Please choose a different name.'
+                    ], 422);
+                }
+
+                // Store guest name in session
+                session(['guest_name' => $guestName]);
                 
                 if ($participant) {
                     $participant->update([
@@ -568,5 +575,28 @@ class QuizLobbyController extends Controller
             ->whereNull('session_id')
             ->where('guest_name', $guestName)
             ->first();
+    }
+
+    private function isGuestNameAlreadyTaken(Quiz $quiz, string $guestName, ?int $ignoreParticipantId = null): bool
+    {
+        $normalizedGuestName = mb_strtolower(trim($guestName));
+
+        return QuizParticipant::with('user')
+            ->where('quiz_id', $quiz->id)
+            ->when($ignoreParticipantId, function ($query) use ($ignoreParticipantId) {
+                $query->where('id', '!=', $ignoreParticipantId);
+            })
+            ->get()
+            ->contains(function (QuizParticipant $participant) use ($normalizedGuestName) {
+                $displayName = $participant->is_guest
+                    ? $participant->guest_name
+                    : optional($participant->user)->name;
+
+                if (!$displayName) {
+                    return false;
+                }
+
+                return mb_strtolower(trim($displayName)) === $normalizedGuestName;
+            });
     }
 }

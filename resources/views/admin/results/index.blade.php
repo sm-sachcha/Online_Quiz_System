@@ -198,7 +198,7 @@
             <div>
                 <h2 class="mb-1"><i class="fas fa-chart-line me-2"></i>Quiz Results</h2>
                 <p class="text-muted mb-0" style="font-size:14px;">
-                    Best result per participant — showing {{ $attempts->total() }} unique {{ Str::plural('entry', $attempts->total()) }}
+                    Best result per participant
                 </p>
             </div>
             <button class="export-btn" id="exportBtn">
@@ -215,25 +215,25 @@
     <div class="col-6 col-md-3">
         <div class="stats-card">
             <h3>{{ $attempts->total() }}</h3>
-            <p>Unique Participants</p>
+            <p>Participants</p>
         </div>
     </div>
     <div class="col-6 col-md-3">
         <div class="stats-card" style="background: linear-gradient(135deg,#28a745 0%,#20c997 100%);">
             <h3>{{ $attempts->getCollection()->where('result.passed', true)->count() }}</h3>
-            <p>Passed (this page)</p>
+            <p>Passed</p>
         </div>
     </div>
     <div class="col-6 col-md-3">
         <div class="stats-card" style="background: linear-gradient(135deg,#dc3545 0%,#c82333 100%);">
             <h3>{{ $attempts->getCollection()->where('result.passed', false)->count() }}</h3>
-            <p>Failed (this page)</p>
+            <p>Failed</p>
         </div>
     </div>
     <div class="col-6 col-md-3">
         <div class="stats-card" style="background: linear-gradient(135deg,#17a2b8 0%,#138496 100%);">
             <h3>{{ $attempts->getCollection()->avg('score') ? number_format($attempts->getCollection()->avg('score'), 1) : '—' }}</h3>
-            <p>Avg Score (this page)</p>
+            <p>Avg Score</p>
         </div>
     </div>
 </div>
@@ -330,7 +330,7 @@
                                 $userName    = $isGuest
                                     ? ($attempt->participant->guest_name ?? 'Guest User')
                                     : ($attempt->user->name ?? 'Unknown User');
-                                $userEmail   = $isGuest ? 'Guest' : ($attempt->user->email ?? 'N/A');
+                                $userEmail   = $isGuest ? '' : ($attempt->user->email ?? 'N/A');
                                 $avatarLetter = strtoupper(substr($userName, 0, 1) ?: '?');
                                 $avatarClass  = $isGuest ? 'avatar-guest' : '';
 
@@ -374,7 +374,7 @@
                                             <div class="fw-semibold" style="font-size:14px; line-height:1.3;">
                                                 {{ $userName }}
                                                 @if($isGuest)
-                                                    <span class="guest-badge">Guest</span>
+                                                    <span class="guest-badge">Participant</span>
                                                 @endif
                                             </div>
                                             <div class="text-muted" style="font-size:12px;">{{ $userEmail }}</div>

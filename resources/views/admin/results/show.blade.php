@@ -585,7 +585,7 @@
                     <div class="col-6">
                         <div class="text-center">
                             <div class="stat-value">{{ gmdate("i:s", $timeTaken) }}</div>
-                            <div class="stat-label">Total Time</div>
+                            <div class="stat-label">Time Remaining</div>
                         </div>
                     </div>
                     <div class="col-6">
