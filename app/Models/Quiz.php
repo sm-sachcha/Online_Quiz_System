@@ -14,17 +14,21 @@ class Quiz extends Model
         'title', 'slug', 'description', 'category_id', 'duration_minutes',
         'total_questions', 'passing_score', 'is_random_questions', 'is_published',
         'scheduled_at', 'ends_at', 'max_attempts', 'total_points', 'settings',
-        'created_by', 'updated_by'
+        'created_by', 'updated_by', 'is_synchronized', 'current_question_id', 
+        'current_question_number', 'current_question_started_at'
     ];
 
     protected $casts = [
         'is_random_questions' => 'boolean',
         'is_published' => 'boolean',
+        'is_synchronized' => 'boolean',
         'scheduled_at' => 'datetime',
         'ends_at' => 'datetime',
+        'current_question_started_at' => 'datetime',
         'settings' => 'array',
         'total_questions' => 'integer',
         'total_points' => 'integer',
+        'current_question_number' => 'integer',
     ];
 
     protected static function boot()
@@ -32,14 +36,36 @@ class Quiz extends Model
         parent::boot();
         
         static::creating(function ($quiz) {
-            $quiz->slug = Str::slug($quiz->title);
+            $quiz->slug = static::generateUniqueSlug($quiz->title);
         });
         
         static::updating(function ($quiz) {
             if ($quiz->isDirty('title')) {
-                $quiz->slug = Str::slug($quiz->title);
+                $quiz->slug = static::generateUniqueSlug($quiz->title, $quiz->id);
             }
         });
+    }
+
+    public static function generateUniqueSlug(string $title, ?int $ignoreId = null): string
+    {
+        $baseSlug = Str::slug($title);
+
+        if ($baseSlug === '') {
+            $baseSlug = 'quiz';
+        }
+
+        $slug = $baseSlug;
+        $counter = 1;
+
+        while (static::query()
+            ->when($ignoreId, fn ($query) => $query->whereKeyNot($ignoreId))
+            ->where('slug', $slug)
+            ->exists()) {
+            $slug = $baseSlug . '-' . $counter;
+            $counter++;
+        }
+
+        return $slug;
     }
 
     /**
@@ -83,6 +109,14 @@ class Quiz extends Model
     public function questions()
     {
         return $this->hasMany(Question::class)->orderBy('order');
+    }
+
+    /**
+     * Get the current question for synchronized mode
+     */
+    public function currentQuestion()
+    {
+        return $this->belongsTo(Question::class, 'current_question_id');
     }
 
     /**

@@ -6,6 +6,8 @@
 <style>
     .participant-item {
         transition: all 0.3s ease;
+    }
+    .participant-item.is-new {
         animation: fadeIn 0.3s ease;
     }
     @keyframes fadeIn {
@@ -515,8 +517,54 @@
     let currentParticipantId = null;
     let channel = null;
     let heartbeatInterval = null;
+    let participantsPollInterval = null;
+    let statusPollInterval = null;
     let leaveSignalSent = false;
+    let quizStartedState = isQuizStarted;
+    let quizEndedState = false;
     const csrfToken = '{{ csrf_token() }}';
+
+    function getParticipantKey(participant) {
+        if (participant?.id) return `participant:${participant.id}`;
+        if (participant?.user_id) return `user:${participant.user_id}`;
+        return `name:${participant?.name || 'guest'}`;
+    }
+
+    function normalizeParticipantsList(nextParticipants) {
+        return (nextParticipants || [])
+            .map((participant) => ({
+                ...participant,
+                status: participant.status || 'joined',
+            }))
+            .sort((a, b) => {
+                const aTime = a.joined_at ? new Date(a.joined_at).getTime() : 0;
+                const bTime = b.joined_at ? new Date(b.joined_at).getTime() : 0;
+                return aTime - bTime;
+            });
+    }
+
+    function participantsStateSignature(nextParticipants) {
+        return JSON.stringify(
+            normalizeParticipantsList(nextParticipants).map((participant) => ({
+                key: getParticipantKey(participant),
+                name: participant.name || '',
+                status: participant.status || 'joined',
+                is_guest: !!participant.is_guest,
+                user_id: participant.user_id || null,
+            }))
+        );
+    }
+
+    function setParticipants(nextParticipants) {
+        const normalizedParticipants = normalizeParticipantsList(nextParticipants);
+
+        if (participantsStateSignature(participants) === participantsStateSignature(normalizedParticipants)) {
+            return;
+        }
+
+        participants = normalizedParticipants;
+        renderParticipants();
+    }
 
     function initRealtimeChannel() {
         if (channel || typeof window.initializeEcho !== 'function') {
@@ -546,15 +594,14 @@
             },
             onLobbyUpdated(event) {
                 if (Array.isArray(event.participants)) {
-                    participants = event.participants;
-                    renderParticipants();
+                    setParticipants(event.participants);
                 }
             },
             onQuizStarted(event) {
                 if (isJoined && !hasLeft && !isRedirecting) {
                     const redirectUrl = event.redirect_url || `/user/quiz/start/${quizId}`;
                     showNotification('Quiz is starting now!', 'success');
-                    setTimeout(() => window.showQuizStartCountdown(3, redirectUrl), 300);
+                    setTimeout(() => startQuizRedirectCountdown(redirectUrl), 300);
                 }
             },
             onQuizEnded() {
@@ -564,8 +611,7 @@
             onParticipantsUpdated(event) {
                 const payload = event.payload || {};
                 if (Array.isArray(payload.lobby_participants)) {
-                    participants = payload.lobby_participants;
-                    renderParticipants();
+                    setParticipants(payload.lobby_participants);
                 }
             }
         });
@@ -592,6 +638,7 @@
             });
         }
 
+        participants = normalizeParticipantsList(participants);
         renderParticipants();
     }
 
@@ -602,14 +649,25 @@
             return true;
         });
 
+        participants = normalizeParticipantsList(participants);
         renderParticipants();
     }
 
     function redirectToQuizStart() {
         if (isRedirecting) return;
         stopLobbyHeartbeat();
+        stopLobbySync();
         isRedirecting = true;
         window.location.href = `/user/quiz/start/${quizId}`;
+    }
+
+    function startQuizRedirectCountdown(redirectUrl = null) {
+        if (isRedirecting) return;
+
+        stopLobbyHeartbeat();
+        stopLobbySync();
+        isRedirecting = true;
+        window.showQuizStartCountdown(3, redirectUrl || `/user/quiz/start/${quizId}`);
     }
 
     function startLobbyHeartbeat() {
@@ -640,6 +698,78 @@
 
         clearInterval(heartbeatInterval);
         heartbeatInterval = null;
+    }
+
+    function syncParticipantsFromServer() {
+        fetch(`/user/quiz/lobby/${quizId}/participants`, {
+            headers: {
+                'Accept': 'application/json'
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => response.ok ? response.json() : Promise.reject(response))
+        .then(data => {
+            if (Array.isArray(data)) {
+                setParticipants(data);
+            }
+        })
+        .catch(() => {});
+    }
+
+    function syncQuizStatusFromServer() {
+        fetch(`/user/quiz/${quizId}/status`, {
+            headers: {
+                'Accept': 'application/json'
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => response.ok ? response.json() : Promise.reject(response))
+        .then(data => {
+            const nextStartedState = !!data.is_started;
+            const nextEndedState = !!(data.ends_at && new Date(data.ends_at).getTime() <= Date.now());
+
+            if (nextEndedState && !quizEndedState) {
+                quizEndedState = true;
+                showNotification('This quiz has ended.', 'warning');
+                setTimeout(() => window.location.reload(), 1200);
+                return;
+            }
+
+            if (nextStartedState !== quizStartedState) {
+                quizStartedState = nextStartedState;
+
+                if (nextStartedState && isJoined && !hasLeft && !isRedirecting) {
+                    showNotification('Quiz is starting now!', 'success');
+                    setTimeout(() => startQuizRedirectCountdown(`/user/quiz/start/${quizId}`), 300);
+                    return;
+                }
+
+                window.location.reload();
+            }
+        })
+        .catch(() => {});
+    }
+
+    function startLobbySync() {
+        if (!participantsPollInterval) {
+            participantsPollInterval = setInterval(syncParticipantsFromServer, 5000);
+        }
+
+        if (!statusPollInterval) {
+            statusPollInterval = setInterval(syncQuizStatusFromServer, 5000);
+        }
+    }
+
+    function stopLobbySync() {
+        if (participantsPollInterval) {
+            clearInterval(participantsPollInterval);
+            participantsPollInterval = null;
+        }
+
+        if (statusPollInterval) {
+            clearInterval(statusPollInterval);
+            statusPollInterval = null;
+        }
     }
 
     function notifyLobbyLeave() {
@@ -724,6 +854,7 @@
                 });
                 initRealtimeChannel();
                 startLobbyHeartbeat();
+                syncParticipantsFromServer();
                 
                 if (isQuizStarted) {
                     redirectToQuizStart();
@@ -775,6 +906,7 @@
                 hasLeft = true;
                 leaveSignalSent = true;
                 isJoined = false;
+                stopLobbySync();
                 sessionStorage.removeItem('joined_quiz_' + quizId);
                 sessionStorage.removeItem('guest_name_' + quizId);
                 sessionStorage.removeItem('participant_id_' + quizId);
@@ -800,28 +932,38 @@
 
     function renderParticipants() {
         const list = document.getElementById('participantsList');
+        const countEl = document.getElementById('participantCount');
         if (!list) return;
         
         if (!participants || participants.length === 0) {
-            list.innerHTML = '<div class="text-center py-3 text-muted"><i class="fas fa-user-friends"></i> No active participants</div>';
-            document.getElementById('participantCount').textContent = '0';
+            if (!list.querySelector('[data-empty-state="true"]')) {
+                list.innerHTML = '<div class="text-center py-3 text-muted" data-empty-state="true"><i class="fas fa-user-friends"></i> No active participants</div>';
+            }
+            if (countEl) countEl.textContent = '0';
             return;
         }
-        
-        list.innerHTML = '';
-        participants.forEach(participant => {
-            const isCurrentUser = (userId && participant.user_id === userId) || 
-                                 (currentParticipantId && participant.id === currentParticipantId) ||
-                                 (participant.name === sessionStorage.getItem('guest_name_' + quizId));
+
+        // Clear empty state message if participants are present
+        const emptyState = list.querySelector('[data-empty-state="true"]');
+        if (emptyState) {
+            emptyState.remove();
+        }
+
+        const existingItems = new Map();
+        list.querySelectorAll('[data-participant-key]').forEach((item) => {
+            existingItems.set(item.dataset.participantKey, item);
+        });
+
+        participants.forEach((participant) => {
+            const participantKey = getParticipantKey(participant);
+            const isCurrentUser = (userId && participant.user_id === userId) ||
+                (currentParticipantId && participant.id === currentParticipantId) ||
+                (participant.name === sessionStorage.getItem('guest_name_' + quizId));
             const isGuest = participant.is_guest || false;
             const isTakingQuiz = participant.status === 'taking_quiz';
-            
-            const item = document.createElement('div');
-            item.className = 'list-group-item participant-item d-flex align-items-center';
-            if (isCurrentUser) item.classList.add('current-user');
-            if (isTakingQuiz) item.classList.add('taking-quiz-user');
-            
-            item.innerHTML = `
+
+            let item = existingItems.get(participantKey);
+            const markup = `
                 <div class="avatar-sm me-3">
                     ${(participant.name || '?').charAt(0).toUpperCase()}
                 </div>
@@ -835,10 +977,29 @@
                     <span class="online-indicator ${isTakingQuiz ? 'online-indicator-taking' : ''}"></span>
                 </div>
             `;
+
+            if (!item) {
+                item = document.createElement('div');
+                item.className = 'list-group-item participant-item d-flex align-items-center is-new';
+                item.dataset.participantKey = participantKey;
+                item.innerHTML = markup;
+                list.appendChild(item);
+                requestAnimationFrame(() => item.classList.remove('is-new'));
+            } else {
+                if (item.innerHTML !== markup) {
+                    item.innerHTML = markup;
+                }
+            }
+
+            item.classList.toggle('current-user', !!isCurrentUser);
+            item.classList.toggle('taking-quiz-user', !!isTakingQuiz);
             list.appendChild(item);
+            existingItems.delete(participantKey);
         });
-        
-        document.getElementById('participantCount').textContent = participants.length;
+
+        existingItems.forEach((item) => item.remove());
+
+        if (countEl) countEl.textContent = participants.length;
     }
 
     function escapeHtml(text) {
@@ -961,15 +1122,19 @@
 
     // Initialize
     checkIfAlreadyJoined();
+    participants = normalizeParticipantsList(participants);
     renderParticipants();
     initRealtimeChannel();
+    startLobbySync();
     
     window.addEventListener('beforeunload', function() {
         if (redirectInterval) clearInterval(redirectInterval);
+        stopLobbySync();
         notifyLobbyLeave();
     });
 
     window.addEventListener('pagehide', function() {
+        stopLobbySync();
         notifyLobbyLeave();
     });
 </script>

@@ -425,6 +425,9 @@
                 if (callbacks.onAttemptQuestionBroadcasted) {
                     channel.listen('.attempt.question.broadcasted', callbacks.onAttemptQuestionBroadcasted);
                 }
+                if (callbacks.onCurrentQuestionBroadcasted) {
+                    channel.listen('.current.question.broadcasted', callbacks.onCurrentQuestionBroadcasted);
+                }
                 if (callbacks.onAttemptResultUpdated) {
                     channel.listen('.attempt.result.updated', callbacks.onAttemptResultUpdated);
                 }

@@ -726,8 +726,20 @@
         
         if (data.is_completed) {
             showNextQuestionLoader();
+            if (data.redirect_url) {
+                setTimeout(() => {
+                    stopAttemptHeartbeat();
+                    isInternalNavigation = true;
+                    window.location.href = data.redirect_url;
+                }, 1200);
+            }
         } else {
             showNextQuestionLoader();
+            if (data.next_question) {
+                setTimeout(() => {
+                    renderQuestion(data.next_question);
+                }, 1200);
+            }
         }
     }
 
@@ -794,6 +806,27 @@
                 }
 
                 renderQuestion(event);
+            },
+            onCurrentQuestionBroadcasted(event) {
+                // Handle synchronized quiz broadcast
+                if (!event) {
+                    return;
+                }
+
+                // If quiz ended (no question_id), show completion message
+                if (!event.question_id) {
+                    showNotification('Quiz finished by admin!', 'info');
+                    stopAttemptHeartbeat();
+                    setTimeout(() => {
+                        window.location.href = `/user/quiz/result/${quizId}/${attemptId}`;
+                    }, 2000);
+                    return;
+                }
+
+                // If it's a different question, render it
+                if (Number(event.question_id) !== Number(currentQuestionId)) {
+                    renderQuestion(event);
+                }
             },
             onAttemptResultUpdated(event) {
                 const payload = event.payload || {};

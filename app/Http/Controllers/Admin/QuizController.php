@@ -82,7 +82,6 @@ class QuizController extends Controller
 
         $quiz = Quiz::create([
             'title' => $request->title,
-            'slug' => Str::slug($request->title),
             'description' => $request->description,
             'category_id' => $request->category_id,
             'duration_minutes' => $request->duration_minutes,
@@ -172,18 +171,8 @@ class QuizController extends Controller
             }
         }
 
-        $baseSlug = Str::slug($request->title);
-        $slug = $baseSlug;
-        $counter = 1;
-        
-        while (Quiz::where('slug', $slug)->where('id', '!=', $quiz->id)->exists()) {
-            $slug = $baseSlug . '-' . $counter;
-            $counter++;
-        }
-
         $quiz->update([
             'title' => $request->title,
-            'slug' => $slug,
             'description' => $request->description,
             'category_id' => $request->category_id,
             'duration_minutes' => $request->duration_minutes,
@@ -302,8 +291,8 @@ class QuizController extends Controller
             ->where('status', 'joined')
             ->count();
 
-        broadcast(new QuizStarted($quiz))->toOthers();
-        broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
+        broadcast(new QuizStarted($quiz));
+        broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)));
         
         $message = 'Quiz has been started! ' . $participants . ' participants have been notified.';
         
@@ -336,8 +325,8 @@ class QuizController extends Controller
             'ends_at' => now()
         ]);
 
-        broadcast(new QuizEnded($quiz))->toOthers();
-        broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
+        broadcast(new QuizEnded($quiz));
+        broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)));
         
         Log::info('Quiz ended manually by admin', [
             'quiz_id' => $quiz->id,
@@ -426,7 +415,7 @@ public function participants(Quiz $quiz)
             
             $quiz = $participant->quiz;
             $participant->delete();
-            broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
+            broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)));
             
             return response()->json(['success' => true, 'message' => 'Participant removed successfully']);
             

@@ -20,7 +20,7 @@ class ResultService
     {
         $quiz = $attempt->quiz;
         $answers = UserAnswer::where('quiz_attempt_id', $attempt->id)
-            ->with('question')
+            ->with(['question.options', 'option'])
             ->get();
         
         $totalScore = $answers->sum('points_earned');
@@ -30,10 +30,19 @@ class ResultService
         
         $questionWiseAnalysis = [];
         foreach ($answers as $answer) {
+            $selectedOptionIds = $this->extractSelectedOptionIds($answer);
+            $correctOptionIds = $answer->question
+                ? $answer->question->options->where('is_correct', true)->pluck('id')->values()->all()
+                : [];
+
             $questionWiseAnalysis[] = [
                 'question_id' => $answer->question_id,
                 'question_text' => $answer->question->question_text,
                 'selected_option_id' => $answer->option_id,
+                'selected_option_ids' => $selectedOptionIds,
+                'selected_answer' => $this->formatUserAnswer($answer),
+                'correct_option_ids' => $correctOptionIds,
+                'correct_answer' => $this->formatCorrectAnswer($answer),
                 'is_correct' => $answer->is_correct,
                 'points_earned' => $answer->points_earned,
                 'time_taken' => $answer->time_taken_seconds,
@@ -157,7 +166,7 @@ class ResultService
         }
         
         $answers = UserAnswer::where('quiz_attempt_id', $attempt->id)
-            ->with(['question', 'option'])
+            ->with(['question.options', 'option'])
             ->get();
         
         $detailedAnswers = [];
@@ -165,8 +174,8 @@ class ResultService
             $detailedAnswers[] = [
                 'question_id' => $answer->question_id,
                 'question_text' => $answer->question->question_text,
-                'user_answer' => $answer->option ? $answer->option->option_text : ($answer->answer_text ?? 'No answer'),
-                'correct_answer' => $answer->question->options()->where('is_correct', true)->first()->option_text ?? 'N/A',
+                'user_answer' => $this->formatUserAnswer($answer),
+                'correct_answer' => $this->formatCorrectAnswer($answer),
                 'is_correct' => $answer->is_correct,
                 'points_earned' => $answer->points_earned,
                 'time_taken' => $answer->time_taken_seconds,
@@ -196,6 +205,77 @@ class ResultService
                 'time_taken' => $attempt->ended_at ? $attempt->ended_at->diffInMinutes($attempt->started_at) : 0
             ]
         ];
+    }
+
+    private function formatUserAnswer(UserAnswer $answer): string
+    {
+        if ($answer->option) {
+            return $answer->option->option_text;
+        }
+
+        $selectedOptionTexts = $this->resolveSelectedOptionTexts($answer);
+        if ($selectedOptionTexts !== []) {
+            return implode(', ', $selectedOptionTexts);
+        }
+
+        return $answer->answer_text ?: 'No answer';
+    }
+
+    private function formatCorrectAnswer(UserAnswer $answer): string
+    {
+        if (!$answer->question) {
+            return 'N/A';
+        }
+
+        $correctOptionTexts = $answer->question->options
+            ->where('is_correct', true)
+            ->pluck('option_text')
+            ->filter()
+            ->values()
+            ->all();
+
+        if ($correctOptionTexts === []) {
+            return 'N/A';
+        }
+
+        return implode(', ', $correctOptionTexts);
+    }
+
+    private function extractSelectedOptionIds(UserAnswer $answer): array
+    {
+        if ($answer->option_id) {
+            return [(int) $answer->option_id];
+        }
+
+        if (!$answer->answer_text) {
+            return [];
+        }
+
+        $decoded = json_decode($answer->answer_text, true);
+        if (!is_array($decoded)) {
+            return [];
+        }
+
+        return array_values(array_map('intval', $decoded));
+    }
+
+    private function resolveSelectedOptionTexts(UserAnswer $answer): array
+    {
+        if (!$answer->question) {
+            return [];
+        }
+
+        $selectedOptionIds = $this->extractSelectedOptionIds($answer);
+        if ($selectedOptionIds === []) {
+            return [];
+        }
+
+        return $answer->question->options
+            ->whereIn('id', $selectedOptionIds)
+            ->pluck('option_text')
+            ->filter()
+            ->values()
+            ->all();
     }
     
     /**

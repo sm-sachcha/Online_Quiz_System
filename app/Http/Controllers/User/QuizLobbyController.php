@@ -377,8 +377,8 @@ class QuizLobbyController extends Controller
             // Broadcast to other participants
             try {
                 $participant->loadMissing('user');
-                broadcast(new ParticipantJoined($participant, $quiz))->toOthers();
-                broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
+                broadcast(new ParticipantJoined($participant, $quiz));
+                broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)));
             } catch (\Exception $e) {
                 Log::warning('Broadcast failed: ' . $e->getMessage());
             }
@@ -437,8 +437,8 @@ class QuizLobbyController extends Controller
                 
                 try {
                     $participant->loadMissing('user');
-                    broadcast(new ParticipantLeft($participant, $quiz))->toOthers();
-                    broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
+                    broadcast(new ParticipantLeft($participant, $quiz));
+                    broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)));
                 } catch (\Exception $e) {
                     Log::warning('Broadcast failed: ' . $e->getMessage());
                 }
@@ -471,27 +471,9 @@ class QuizLobbyController extends Controller
     public function participants(Quiz $quiz)
     {
         try {
-            $participants = QuizParticipant::where('quiz_id', $quiz->id)
-                ->where('status', 'joined')
-                ->orderBy('joined_at', 'asc')
-                ->get()
-                ->map(function ($participant) {
-                    $displayName = $participant->guest_name;
-                    if (!$participant->is_guest && $participant->user) {
-                        $displayName = $participant->user->name;
-                    } elseif (!$participant->is_guest && !$participant->user) {
-                        $displayName = 'Unknown User';
-                    }
-                    
-                    return [
-                        'id' => $participant->id,
-                        'name' => $displayName,
-                        'is_guest' => $participant->is_guest,
-                        'joined_at' => $participant->joined_at
-                    ];
-                });
+            $payload = $this->quizParticipantsPayloadService->build($quiz);
 
-            return response()->json($participants);
+            return response()->json($payload['lobby_participants'] ?? []);
             
         } catch (\Exception $e) {
             Log::error('Error fetching participants', [

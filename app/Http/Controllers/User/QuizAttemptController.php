@@ -160,22 +160,31 @@ class QuizAttemptController extends Controller
     private function handleGuestParticipant(Quiz $quiz)
     {
         $guestName = session('guest_name');
-        $sessionId = session()->getId();
-        
-        if (!$guestName) {
+        $participant = $this->findGuestParticipantBySession($quiz);
+
+        if (!$participant && !$guestName) {
+            $participant = QuizParticipant::where('quiz_id', $quiz->id)
+                ->where('is_guest', true)
+                ->where('status', 'joined')
+                ->where('session_id', session()->getId())
+                ->latest('id')
+                ->first();
+        }
+
+        if (!$participant && !$guestName) {
             return redirect()->route('user.quiz.lobby', $quiz)
                 ->with('error', 'Please join the lobby first by entering your name.');
         }
-        
-        $participant = QuizParticipant::where('quiz_id', $quiz->id)
-            ->where('is_guest', true)
-            ->where('session_id', $sessionId)
-            ->first();
+
+        if ($participant && !$guestName && $participant->guest_name) {
+            $guestName = $participant->guest_name;
+            session(['guest_name' => $guestName]);
+        }
         
         if (!$participant) {
             $participant = QuizParticipant::create([
                 'quiz_id' => $quiz->id,
-                'session_id' => $sessionId,
+                'session_id' => session()->getId(),
                 'guest_name' => $guestName,
                 'is_guest' => true,
                 'status' => 'joined',
@@ -183,6 +192,8 @@ class QuizAttemptController extends Controller
             ]);
         } else {
             $participant->update([
+                'session_id' => $participant->session_id ?: session()->getId(),
+                'guest_name' => $guestName ?: $participant->guest_name,
                 'status' => 'joined',
                 'joined_at' => now(),
                 'updated_at' => now()
@@ -469,6 +480,8 @@ class QuizAttemptController extends Controller
                 $request->time_taken
             );
 
+            $attempt = $attempt->fresh();
+
             broadcast(new AnswerSubmitted($answer))->toOthers();
 
             $totalQuestions = $quiz->questions()->count();
@@ -500,6 +513,23 @@ class QuizAttemptController extends Controller
                 $this->broadcastNextAttemptQuestion($quiz, $attempt);
             }
 
+            $nextQuestionPayload = null;
+            $resultRedirectUrl = null;
+
+            if ($isCompleted) {
+                $resultRedirectUrl = route('user.quiz.result', ['quiz' => $quiz->id, 'attempt' => $attempt->id]);
+            } else {
+                $nextQuestionData = $this->getNextQuestion($quiz, $attempt);
+
+                if (!($nextQuestionData['is_completed'] ?? false) && !empty($nextQuestionData['currentQuestion'])) {
+                    $nextQuestionPayload = $this->serializeAttemptQuestionPayload(
+                        $nextQuestionData['currentQuestion'],
+                        (int) $nextQuestionData['currentQuestionNumber'],
+                        (int) $nextQuestionData['totalQuestions']
+                    );
+                }
+            }
+
             $correctOption = null;
             if ($request->question_type !== 'multiple_choice') {
                 $question = Question::with('options')->find($request->question_id);
@@ -518,6 +548,8 @@ class QuizAttemptController extends Controller
                 'incorrect_answers' => $attempt->incorrect_answers,
                 'correct_option_id' => $correctOption ? $correctOption->id : null,
                 'selected_option_id' => $request->option_id,
+                'next_question' => $nextQuestionPayload,
+                'redirect_url' => $resultRedirectUrl,
                 'message' => $isCompleted ? 'Quiz completed! Redirecting to results...' : 'Answer submitted successfully!'
             ]);
         } catch (\Exception $e) {
@@ -660,6 +692,23 @@ class QuizAttemptController extends Controller
                 $this->broadcastParticipantsUpdated($quiz);
                 $this->broadcastNextAttemptQuestion($quiz, $attempt);
             }
+
+            $nextQuestionPayload = null;
+            $resultRedirectUrl = null;
+
+            if ($isCompleted) {
+                $resultRedirectUrl = route('user.quiz.result', ['quiz' => $quiz->id, 'attempt' => $attempt->id]);
+            } else {
+                $nextQuestionData = $this->getNextQuestion($quiz, $attempt);
+
+                if (!($nextQuestionData['is_completed'] ?? false) && !empty($nextQuestionData['currentQuestion'])) {
+                    $nextQuestionPayload = $this->serializeAttemptQuestionPayload(
+                        $nextQuestionData['currentQuestion'],
+                        (int) $nextQuestionData['currentQuestionNumber'],
+                        (int) $nextQuestionData['totalQuestions']
+                    );
+                }
+            }
             
             return response()->json([
                 'success' => true,
@@ -670,7 +719,9 @@ class QuizAttemptController extends Controller
                 'answered_count' => $answeredCount,
                 'total_questions' => $totalQuestions,
                 'correct_answers' => $attempt->correct_answers,
-                'incorrect_answers' => $attempt->incorrect_answers
+                'incorrect_answers' => $attempt->incorrect_answers,
+                'next_question' => $nextQuestionPayload,
+                'redirect_url' => $resultRedirectUrl,
             ]);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
@@ -754,7 +805,7 @@ class QuizAttemptController extends Controller
             if ($participant && in_array($participant->status, ['joined', 'taking_quiz'])) {
                 $participant->update(['status' => 'left', 'left_at' => now()]);
                 $participant->loadMissing('user');
-                broadcast(new ParticipantLeft($participant, $quiz))->toOthers();
+                broadcast(new ParticipantLeft($participant, $quiz));
                 $this->broadcastParticipantsUpdated($quiz);
             }
         } elseif ($attempt && $attempt->participant_id) {
@@ -762,7 +813,7 @@ class QuizAttemptController extends Controller
             if ($participant && in_array($participant->status, ['joined', 'taking_quiz'])) {
                 $participant->update(['status' => 'left', 'left_at' => now()]);
 
-                broadcast(new ParticipantLeft($participant, $quiz))->toOthers();
+                broadcast(new ParticipantLeft($participant, $quiz));
                 $this->broadcastParticipantsUpdated($quiz);
             }
         }
@@ -895,7 +946,7 @@ class QuizAttemptController extends Controller
         broadcast(new QuizParticipantsUpdated(
             $quiz,
             $this->quizParticipantsPayloadService->build($quiz)
-        ))->toOthers();
+        ));
     }
 
     private function broadcastNextAttemptQuestion(Quiz $quiz, QuizAttempt $attempt): void
@@ -912,7 +963,7 @@ class QuizAttemptController extends Controller
             $nextQuestionData['currentQuestion'],
             (int) $nextQuestionData['currentQuestionNumber'],
             (int) $nextQuestionData['totalQuestions']
-        ))->toOthers();
+        ));
     }
 
     private function broadcastAttemptResultUpdated(Quiz $quiz, QuizAttempt $attempt): void
@@ -940,7 +991,30 @@ class QuizAttemptController extends Controller
             'passed' => (bool) $result->passed,
             'rank' => $userRank,
             'total_participants' => $leaderboard->count(),
-        ]))->toOthers();
+        ]));
+    }
+
+    private function serializeAttemptQuestionPayload(Question $question, int $questionNumber, int $totalQuestions): array
+    {
+        $question->loadMissing('options');
+
+        return [
+            'question_id' => $question->id,
+            'question_text' => $question->question_text,
+            'question_type' => $question->question_type,
+            'question_number' => $questionNumber,
+            'total_questions' => $totalQuestions,
+            'time_seconds' => (int) $question->time_seconds,
+            'points' => (int) $question->points,
+            'show_answer' => (bool) $question->show_answer,
+            'options' => $question->options->map(function ($option) {
+                return [
+                    'id' => $option->id,
+                    'text' => $option->option_text,
+                    'is_correct' => (bool) $option->is_correct,
+                ];
+            })->values()->all(),
+        ];
     }
 
     private function attemptBelongsToCurrentParticipant(Quiz $quiz, QuizAttempt $attempt): bool

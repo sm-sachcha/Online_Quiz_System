@@ -6,14 +6,10 @@ use App\Events\ParticipantJoined;
 use App\Events\ParticipantLeft;
 use App\Events\QuizLobbyUpdated;
 use App\Models\QuizParticipant;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Log;
 
-class UpdateQuizLobby implements ShouldQueue
+class UpdateQuizLobby
 {
-    use InteractsWithQueue;
-
     public function handleParticipantJoined(ParticipantJoined $event): void
     {
         try {

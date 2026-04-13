@@ -35,11 +35,15 @@ class ParticipantJoined implements ShouldBroadcast
 
     public function broadcastWith()
     {
+        $participantName = $this->participant->is_guest
+            ? ($this->participant->guest_name ?? 'Guest')
+            : (optional($this->participant->user)->name ?? 'Unknown User');
+
         return [
             'participant' => [
                 'id' => $this->participant->id ?? null,
                 'user_id' => $this->participant->user_id ?? null,
-                'name' => $this->participant->guest_name ?? ($this->participant->name ?? 'Guest'),
+                'name' => $participantName,
                 'is_guest' => !isset($this->participant->user_id) || !$this->participant->user_id,
                 'status' => $this->participant->status ?? 'joined',
                 'joined_at' => now(),

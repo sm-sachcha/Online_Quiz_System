@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\QuestionController;
 use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Admin\ReportController;
 use App\Http\Controllers\Admin\ResultController as AdminResultController;
+use App\Http\Controllers\WebSocket\QuizBroadcastController;
 use App\Http\Controllers\MasterAdmin\AdminManagementController;
 use App\Http\Controllers\MasterAdmin\SystemSettingsController;
 
@@ -99,6 +100,13 @@ Route::middleware(['auth', 'role:admin,master_admin'])->prefix('admin')->name('a
     Route::post('quizzes/{quiz}/quit', [AdminQuizController::class, 'quitQuiz'])->name('quizzes.quit');
     Route::get('quizzes/{quiz}/participants-json', [AdminQuizController::class, 'getParticipants'])->name('quizzes.participants-json');
     Route::get('quizzes/{quiz}/status', [AdminQuizController::class, 'getQuizStatus'])->name('quizzes.status');
+    
+    // Synchronized Quiz Broadcast Routes
+    Route::prefix('quiz-broadcast')->name('quiz-broadcast.')->group(function () {
+        Route::post('{quiz}/set-current-question', [QuizBroadcastController::class, 'setCurrentQuestion'])->name('set-current-question');
+        Route::post('{quiz}/next-question', [QuizBroadcastController::class, 'nextQuestion'])->name('next-question');
+        Route::post('{quiz}/previous-question', [QuizBroadcastController::class, 'previousQuestion'])->name('previous-question');
+    });
     
     // Questions
     Route::prefix('quizzes/{quiz}/questions')->name('quizzes.questions.')->group(function () {

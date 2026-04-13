@@ -164,6 +164,22 @@
 
                         <div class="col-md-6">
                             <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="is_synchronized" 
+                                       name="is_synchronized" value="1" 
+                                       {{ old('is_synchronized') ? 'checked' : '' }}>
+                                <label class="form-check-label" for="is_synchronized">
+                                    <i class="fas fa-sync-alt"></i> Synchronized Mode
+                                </label>
+                                <div class="form-text text-muted">
+                                    All participants see the same question at the same time. Admin controls question progression.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check">
                                 <input type="checkbox" class="form-check-input" id="is_published" 
                                        name="is_published" value="1" 
                                        {{ old('is_published') ? 'checked' : '' }}>
