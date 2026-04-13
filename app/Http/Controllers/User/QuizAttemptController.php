@@ -103,7 +103,7 @@ class QuizAttemptController extends Controller
                 
                 if ($quiz->max_attempts > 0 && $completedAttempts >= $quiz->max_attempts) {
                     return redirect()->route('user.dashboard')
-                        ->with('error', 'You have reached the maximum number of attempts (' . $quiz->max_attempts . ') for this quiz.');
+                        ->with('error', 'You have reached (' . $quiz->max_attempts . ') for this quiz.');
                 }
             }
             

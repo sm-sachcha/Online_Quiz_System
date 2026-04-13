@@ -243,6 +243,7 @@ class QuizLobbyController extends Controller
         try {
             $guestName = $request->input('guest_name');
             $user = Auth::user();
+            $existingParticipant = null;
             
             Log::info('Join request received', [
                 'quiz_id' => $quiz->id,
@@ -313,20 +314,33 @@ class QuizLobbyController extends Controller
             $userHasInProgress = false;
             
             if ($user) {
+                $existingParticipant = QuizParticipant::where('quiz_id', $quiz->id)
+                    ->where('user_id', $user->id)
+                    ->first();
+
                 $userHasInProgress = QuizAttempt::where('user_id', $user->id)
                     ->where('quiz_id', $quiz->id)
                     ->where('status', 'in_progress')
                     ->exists();
             } else {
-                if ($guestName) {
-                    $guestParticipant = $this->findGuestParticipantBySession($quiz);
-                    if ($guestParticipant) {
-                        $userHasInProgress = QuizAttempt::where('quiz_id', $quiz->id)
-                            ->where('participant_id', $guestParticipant->id)
-                            ->where('status', 'in_progress')
-                            ->exists();
-                    }
+                $existingParticipant = $this->findGuestParticipantBySession($quiz);
+
+                if ($existingParticipant) {
+                    $userHasInProgress = QuizAttempt::where('quiz_id', $quiz->id)
+                        ->where('participant_id', $existingParticipant->id)
+                        ->where('status', 'in_progress')
+                        ->exists();
                 }
+            }
+
+            $alreadyAllowedToEnter = $existingParticipant
+                && in_array($existingParticipant->status, ['joined', 'taking_quiz', 'completed'], true);
+
+            if ($quizAlreadyStarted && !$alreadyAllowedToEnter && !$userHasInProgress) {
+                return response()->json([
+                    'success' => false,
+                    'error' => 'The quiz has already started. New participants cannot join now.'
+                ], 403);
             }
             
             // For logged-in users, check remaining attempts
@@ -353,9 +367,6 @@ class QuizLobbyController extends Controller
             $previousStatus = null;
 
             if ($user) {
-                $existingParticipant = QuizParticipant::where('quiz_id', $quiz->id)
-                    ->where('user_id', $user->id)
-                    ->first();
                 $previousStatus = $existingParticipant?->status;
 
                 $participant = QuizParticipant::updateOrCreate(
@@ -388,7 +399,7 @@ class QuizLobbyController extends Controller
                 }
                 
                 // Check if guest already exists
-                $participant = $this->findGuestParticipantBySession($quiz);
+                $participant = $existingParticipant;
 
                 if ($this->isGuestNameAlreadyTaken($quiz, $guestName, $participant?->id)) {
                     return response()->json([

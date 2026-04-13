@@ -303,11 +303,11 @@
                     </div>
                 @endif
                 
-                @if(isset($quizStartedByAdmin) && $quizStartedByAdmin && !isset($inProgressAttempt) && !isset($participant))
+                @if(isset($quizStartedByAdmin) && $quizStartedByAdmin && empty($inProgressAttempt) && empty($participant))
                     <div class="quiz-started-warning">
                         <i class="fas fa-ban fa-2x text-danger mb-2"></i>
-                        <h4 class="text-danger">Quiz Already Started!</h4>
-                        <p class="mb-0">This quiz is live now. Join and start immediately.</p>
+                        <h4 class="text-danger">Joining Closed</h4>
+                        <p class="mb-0">This quiz has already started, so new participants can no longer join.</p>
                         <a href="{{ route('user.dashboard') }}" class="btn btn-primary mt-3">
                             <i class="fas fa-home"></i> Back to Dashboard
                         </a>
@@ -421,6 +421,12 @@
                     </div>
                 @else
                     <div class="text-center mt-4">
+                        <div id="lateJoinClosedNotice" class="quiz-started-warning" style="display: none;">
+                            <i class="fas fa-lock fa-2x text-danger mb-2"></i>
+                            <h5 class="text-danger mb-2">Joining is closed</h5>
+                            <p class="mb-0">The admin has already started this quiz. New users cannot join now.</p>
+                        </div>
+
                         @if(Auth::check())
                             @php
                                 $remainingAttempts = $remainingAttempts ?? ($quiz->max_attempts - ($completedAttemptsCount ?? 0));
@@ -433,10 +439,7 @@
                                 <!-- Already showing resume button above -->
                             @elseif(isset($participant) && $participant && $participant->status === 'joined')
                                 @if(isset($quizStartedByAdmin) && $quizStartedByAdmin)
-                                    <a href="{{ route('user.quiz.start', $quiz) }}" class="start-btn">
-                                        <i class="fas fa-play"></i> Start Quiz
-                                    </a>
-                                    <p class="text-muted mt-2 small">The quiz is live now. Start immediately.</p>
+                                    <p class="text-muted mt-2 small">The quiz is live. You will be redirected automatically.</p>
                                 @else
                                     <button class="waiting-btn" disabled>
                                         <i class="fas fa-hourglass-half"></i> Waiting for Quiz to Start...
@@ -445,9 +448,7 @@
                                 @endif
                             @else
                                 @if(isset($quizStartedByAdmin) && $quizStartedByAdmin)
-                                    <a href="{{ route('user.quiz.start', $quiz) }}" class="start-btn">
-                                        <i class="fas fa-play"></i> Join And Start
-                                    </a>
+                                    <!-- Joining is closed once the quiz starts -->
                                 @else
                                     <button class="join-btn" id="joinQuizBtn">
                                         <i class="fas fa-sign-in-alt"></i> Join Lobby
@@ -455,12 +456,12 @@
                                 @endif
                             @endif
                         @elseif(isset($isPublicQuiz) && $isPublicQuiz)
-                            <div class="mt-4 p-4 bg-light rounded" id="guestJoinSection">
-                                <h5><i class="fas fa-user-plus"></i> {{ (isset($quizStartedByAdmin) && $quizStartedByAdmin) ? 'Join And Start Quiz' : 'Join the Quiz' }}</h5>
+                            <div class="mt-4 p-4 bg-light rounded" id="guestJoinSection" style="{{ (isset($quizStartedByAdmin) && $quizStartedByAdmin && empty($participant) && empty($inProgressAttempt)) ? 'display: none;' : '' }}">
+                                <h5><i class="fas fa-user-plus"></i> Join the Quiz</h5>
                                 <div class="guest-input-group">
                                     <input type="text" id="guestNameInput" class="guest-input" placeholder="Enter your name" autocomplete="off">
                                     <button id="directJoinBtn" class="guest-join-btn">
-                                        <i class="fas fa-sign-in-alt"></i> {{ (isset($quizStartedByAdmin) && $quizStartedByAdmin) ? 'Join And Start' : 'Join Lobby' }}
+                                        <i class="fas fa-sign-in-alt"></i> Join Lobby
                                     </button>
                                 </div>
                             </div>
@@ -590,7 +591,7 @@
                         showNotification('Quiz is starting now!', 'success');
                         setTimeout(() => beginQuizStartRedirect(redirectUrl), 300);
                     } else {
-                        updateJoinButtonText();
+                        updateLobbyEntryState();
                     }
                 },
                 onQuizEnded() {
@@ -611,14 +612,25 @@
         }
     }
 
-    function updateJoinButtonText() {
+    function updateLobbyEntryState() {
         const joinBtn = document.querySelector('.join-btn');
-        const joinTitle = document.querySelector('.join-modal-title');
-        if (joinBtn && isQuizStarted) {
-            joinBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Join And Start';
+        const guestSection = document.getElementById('guestJoinSection');
+        const lateJoinClosedNotice = document.getElementById('lateJoinClosedNotice');
+
+        if (!isQuizStarted || hasActiveLobbyIdentity()) {
+            return;
         }
-        if (joinTitle && isQuizStarted) {
-            joinTitle.innerHTML = '<i class="fas fa-user-plus"></i> Join And Start Quiz';
+
+        if (joinBtn) {
+            joinBtn.style.display = 'none';
+        }
+
+        if (guestSection) {
+            guestSection.style.display = 'none';
+        }
+
+        if (lateJoinClosedNotice) {
+            lateJoinClosedNotice.style.display = 'block';
         }
     }
 
@@ -799,7 +811,7 @@
             .then((data) => {
                 if (data.is_started && !isQuizStarted) {
                     isQuizStarted = true;
-                    updateJoinButtonText();
+                    updateLobbyEntryState();
 
                     if (shouldAutoStartQuiz()) {
                         beginQuizStartRedirect(`/user/quiz/start/${quizId}`);
@@ -862,6 +874,11 @@
     }
 
     function joinLobby(guestName = null) {
+        if (isQuizStarted && !hasActiveLobbyIdentity()) {
+            alert('The quiz has already started. New participants cannot join now.');
+            return;
+        }
+
         const data = {};
         if (guestName) data.guest_name = guestName;
         
