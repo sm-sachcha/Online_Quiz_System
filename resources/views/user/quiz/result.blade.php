@@ -306,11 +306,11 @@
                     <!-- Attempts Info Section -->
                     <div class="attempts-info text-center">
                         <div class="row">
-                            <div class="col-md-4">
+                            <!-- <div class="col-md-4">
                                 <i class="fas fa-bullseye text-primary"></i>
                                 <strong>Current Attempt: {{ $attempt->score }} points</strong>
                                 <br><small class="text-muted">({{ $percentage ?? 0 }}%)</small>
-                            </div>
+                            </div> -->
                             <!-- <div class="col-md-4">
                                 <i class="fas fa-chart-line text-success"></i>
                                 @if(isset($bestScoreInfo) && $bestScoreInfo)
@@ -321,11 +321,11 @@
                                     <br><small class="text-muted">{{ $attempt->score }} points ({{ $percentage ?? 0 }}%)</small>
                                 @endif
                             </div> -->
-                            <div class="col-md-4">
+                            <!-- <div class="col-md-4">
                                 <i class="fas fa-bullseye text-info"></i>
                                 <strong>Current Accuracy: {{ $performanceMetrics['accuracy'] ?? 0 }}%</strong>
                                 <br><small class="text-muted">{{ $attempt->correct_answers }}/{{ $attempt->total_questions }} correct</small>
-                            </div>
+                            </div> -->
                         </div>
                     </div>
 
