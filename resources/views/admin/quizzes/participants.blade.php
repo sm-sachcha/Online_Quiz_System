@@ -252,7 +252,7 @@
     </div>
     <div class="col-md-3">
         <div class="stats-card" style="background: linear-gradient(135deg, #ffc107 0%, #e0a800 100%);">
-            <h3 id="takingQuizCount">{{ count($inProgressUsers ?? []) }}</h3>
+            <h3 id="takingQuizCount">{{ $takingQuizCount ?? 0 }}</h3>
             <p class="mb-0">Taking Quiz Now</p>
         </div>
     </div>
@@ -274,7 +274,7 @@
 <div class="filter-buttons">
     <button class="filter-btn active" data-filter="all">All (<span id="filterAllCount">{{ count($participants ?? []) }}</span>)</button>
     <button class="filter-btn" data-filter="active">Active (<span id="filterActiveCount">{{ $activeParticipants ?? 0 }}</span>)</button>
-    <button class="filter-btn" data-filter="taking">Taking Quiz (<span id="filterTakingCount">{{ count($inProgressUsers ?? []) }}</span>)</button>
+    <button class="filter-btn" data-filter="taking">Taking Quiz (<span id="filterTakingCount">{{ $takingQuizCount ?? 0 }}</span>)</button>
     <button class="filter-btn" data-filter="lobby">In Lobby (<span id="filterLobbyCount">{{ $lobbyUsers ?? 0 }}</span>)</button>
     <button class="filter-btn" data-filter="completed">Completed (<span id="filterCompletedCount">{{ $completedParticipants ?? 0 }}</span>)</button>
     <button class="filter-btn" data-filter="left">Left (<span id="filterLeftCount">{{ $leftParticipants ?? 0 }}</span>)</button>
@@ -286,129 +286,127 @@
         <h5 class="mb-0"><i class="fas fa-list"></i> Participants List</h5>
     </div>
     <div class="card-body p-0">
-        @if(isset($participants) && count($participants) > 0)
-            <div class="table-responsive" id="participantsTableWrapper">
-                <table class="table table-hover mb-0" id="participantsTable">
-                    <thead class="table-light">
-                        <tr>
-                            <th width="50">#</th>
-                            <th>Participant</th>
-                            <th>Email</th>
-                            <th width="140">Status</th>
-                            <th width="180">Joined At</th>
-                            <th width="150">Last Active</th>
-                            <th width="100">Actions</th>
-                        </thead>
-                    <tbody>
-                        @foreach($participants as $index => $participant)
-                            @php
-                                $participantId = $participant['id'] ?? null;
-                                $participantUserId = $participant['user_id'] ?? null;
-                                $participantName = $participant['name'] ?? 'Unknown';
-                                $isGuest = $participant['is_guest'] ?? false;
-                                $participantStatus = $participant['effective_status'] ?? ($participant['status'] ?? 'unknown');
-                                $joinedAt = $participant['joined_at'] ?? null;
-                                $updatedAt = $participant['updated_at'] ?? null;
-                                $displayEmail = $isGuest ? 'N/A' : ($participant['email'] ?? 'N/A');
-                                $latestAttemptId = $participant['latest_attempt_id'] ?? null;
-                                $avatarLetter = $participantName ? strtoupper(substr($participantName, 0, 1)) : '?';
-                                $avatarClass = $isGuest ? 'avatar-guest' : '';
-                            @endphp
-                            <tr class="participant-row" data-participant-id="{{ $participantId }}" data-status="{{ $participantStatus }}">
-                                <td class="text-center">{{ $index + 1 }} </td>
-                                <td>
-                                    <div class="d-flex align-items-center">
-                                        <div class="avatar me-3 {{ $avatarClass }}">
-                                            {{ $avatarLetter }}
-                                        </div>
-                                        <div>
-                                            <span class="participant-name">{{ $participantName }}</span>
-                                            @if($isGuest)
-                                                <span class="guest-badge">Examinee</span>
-                                            @endif
-                                            @if($participantUserId == Auth::id())
-                                                <span class="badge bg-info ms-1">You</span>
-                                            @endif
-                                        </div>
+        <div class="table-responsive {{ count($participants ?? []) ? '' : 'd-none' }}" id="participantsTableWrapper">
+            <table class="table table-hover mb-0" id="participantsTable">
+                <thead class="table-light">
+                    <tr>
+                        <th width="50">#</th>
+                        <th>Participant</th>
+                        <th>Email</th>
+                        <th width="140">Status</th>
+                        <th width="180">Joined At</th>
+                        <th width="150">Last Active</th>
+                        <th width="100">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach($participants as $index => $participant)
+                        @php
+                            $participantId = $participant['id'] ?? null;
+                            $participantUserId = $participant['user_id'] ?? null;
+                            $participantName = $participant['name'] ?? 'Unknown';
+                            $isGuest = $participant['is_guest'] ?? false;
+                            $participantStatus = $participant['effective_status'] ?? ($participant['status'] ?? 'unknown');
+                            $joinedAt = $participant['joined_at'] ?? null;
+                            $updatedAt = $participant['updated_at'] ?? null;
+                            $displayEmail = $isGuest ? 'N/A' : ($participant['email'] ?? 'N/A');
+                            $latestAttemptId = $participant['latest_attempt_id'] ?? null;
+                            $avatarLetter = $participantName ? strtoupper(substr($participantName, 0, 1)) : '?';
+                            $avatarClass = $isGuest ? 'avatar-guest' : '';
+                        @endphp
+                        <tr class="participant-row" data-participant-id="{{ $participantId }}" data-status="{{ $participantStatus }}">
+                            <td class="text-center">{{ $index + 1 }} </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="avatar me-3 {{ $avatarClass }}">
+                                        {{ $avatarLetter }}
                                     </div>
-                                </td>
-                                <td>
-                                    <i class="fas {{ $isGuest ? 'fa-user-friends' : 'fa-envelope' }} text-muted me-1"></i>
-                                    {{ $displayEmail }}
-                                </td>
-                                <td>
-                                    @if($participantStatus == 'taking_quiz')
-                                        <span class="status-badge status-taking-quiz">
-                                            <i class="fas fa-play"></i> Taking Quiz
-                                            <span class="online-indicator online-indicator-taking ms-1"></span>
-                                        </span>
-                                    @elseif($participantStatus == 'joined')
-                                        <span class="status-badge status-active">
-                                            <i class="fas fa-circle"></i> In Lobby
-                                            <span class="online-indicator online-indicator-active ms-1"></span>
-                                        </span>
-                                    @elseif($participantStatus == 'completed')
-                                        <span class="status-badge status-completed">
-                                            <i class="fas fa-check-circle"></i> Completed
-                                        </span>
-                                    @elseif($participantStatus == 'left')
-                                        <span class="status-badge status-left">
-                                            <i class="fas fa-sign-out-alt"></i> Left
-                                        </span>
-                                    @else
-                                        <span class="status-badge status-left">
-                                            <i class="fas fa-clock"></i> Registered
-                                        </span>
-                                    @endif
-                                </td>
-                                <td>
-                                    @if($joinedAt)
-                                        <i class="far fa-calendar-alt text-muted me-1"></i>
-                                        {{ \Carbon\Carbon::parse($joinedAt)->format('M d, Y h:i A') }}
-                                        <br>
-                                        <small class="text-muted">{{ \Carbon\Carbon::parse($joinedAt)->diffForHumans() }}</small>
-                                    @else
-                                        <span class="text-muted">N/A</span>
-                                    @endif
-                                </td>
-                                <td>
-                                    @if($updatedAt)
-                                        <i class="fas fa-clock text-muted me-1"></i>
-                                        <span class="last-active-time">{{ \Carbon\Carbon::parse($updatedAt)->diffForHumans() }}</span>
-                                    @else
-                                        <span class="text-muted">N/A</span>
-                                    @endif
-                                </td>
-                                <td>
-                                    <div class="btn-group" role="group">
-                                        @if($latestAttemptId)
-                                            <a href="{{ route('user.quiz.result', ['quiz' => $quiz->id, 'attempt' => $latestAttemptId]) }}" 
-                                               class="btn btn-sm btn-primary" title="View Result" target="_blank">
-                                                <i class="fas fa-chart-line"></i>
-                                            </a>
+                                    <div>
+                                        <span class="participant-name">{{ $participantName }}</span>
+                                        @if($isGuest)
+                                            <span class="guest-badge">Examinee</span>
+                                        @endif
+                                        @if($participantUserId == Auth::id())
+                                            <span class="badge bg-info ms-1">You</span>
                                         @endif
                                     </div>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        @else
-            <div class="text-center py-5">
-                <i class="fas fa-user-friends fa-4x text-muted mb-3"></i>
-                <h5>No Participants Yet</h5>
-                <p class="text-muted">No one has joined this quiz yet. Share the link to get participants!</p>
-                <div class="mt-3">
-                    <div class="input-group w-50 mx-auto">
-                        <input type="text" class="form-control" id="quizLink" value="{{ url('/user/quiz/lobby/' . $quiz->id) }}" readonly>
-                        <button class="btn btn-primary" onclick="copyQuizLink()">
-                            <i class="fas fa-copy"></i> Copy Link
-                        </button>
-                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <i class="fas {{ $isGuest ? 'fa-user-friends' : 'fa-envelope' }} text-muted me-1"></i>
+                                {{ $displayEmail }}
+                            </td>
+                            <td>
+                                @if($participantStatus == 'taking_quiz')
+                                    <span class="status-badge status-taking-quiz">
+                                        <i class="fas fa-play"></i> Taking Quiz
+                                        <span class="online-indicator online-indicator-taking ms-1"></span>
+                                    </span>
+                                @elseif($participantStatus == 'joined')
+                                    <span class="status-badge status-active">
+                                        <i class="fas fa-circle"></i> In Lobby
+                                        <span class="online-indicator online-indicator-active ms-1"></span>
+                                    </span>
+                                @elseif($participantStatus == 'completed')
+                                    <span class="status-badge status-completed">
+                                        <i class="fas fa-check-circle"></i> Completed
+                                    </span>
+                                @elseif($participantStatus == 'left')
+                                    <span class="status-badge status-left">
+                                        <i class="fas fa-sign-out-alt"></i> Left
+                                    </span>
+                                @else
+                                    <span class="status-badge status-left">
+                                        <i class="fas fa-clock"></i> Registered
+                                    </span>
+                                @endif
+                            </td>
+                            <td>
+                                @if($joinedAt)
+                                    <i class="far fa-calendar-alt text-muted me-1"></i>
+                                    {{ \Carbon\Carbon::parse($joinedAt)->format('M d, Y h:i A') }}
+                                    <br>
+                                    <small class="text-muted">{{ \Carbon\Carbon::parse($joinedAt)->diffForHumans() }}</small>
+                                @else
+                                    <span class="text-muted">N/A</span>
+                                @endif
+                            </td>
+                            <td>
+                                @if($updatedAt)
+                                    <i class="fas fa-clock text-muted me-1"></i>
+                                    <span class="last-active-time">{{ \Carbon\Carbon::parse($updatedAt)->diffForHumans() }}</span>
+                                @else
+                                    <span class="text-muted">N/A</span>
+                                @endif
+                            </td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    @if($latestAttemptId)
+                                        <a href="{{ route('user.quiz.result', ['quiz' => $quiz->id, 'attempt' => $latestAttemptId]) }}" 
+                                           class="btn btn-sm btn-primary" title="View Result" target="_blank">
+                                            <i class="fas fa-chart-line"></i>
+                                        </a>
+                                    @endif
+                                </div>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+        <div class="text-center py-5 {{ count($participants ?? []) ? 'd-none' : '' }}" id="emptyParticipantsState">
+            <i class="fas fa-user-friends fa-4x text-muted mb-3"></i>
+            <h5>No Participants Yet</h5>
+            <p class="text-muted">No one has joined this quiz yet. Share the link to get participants!</p>
+            <div class="mt-3">
+                <div class="input-group w-50 mx-auto">
+                    <input type="text" class="form-control" id="quizLink" value="{{ url('/user/quiz/lobby/' . $quiz->id) }}" readonly>
+                    <button class="btn btn-primary" onclick="copyQuizLink()">
+                        <i class="fas fa-copy"></i> Copy Link
+                    </button>
                 </div>
             </div>
-        @endif
+        </div>
     </div>
 </div>
 
@@ -528,8 +526,20 @@
 
         function updateParticipantsTable(payload) {
             const participants = payload.participants || [];
+            const tableWrapper = $('#participantsTableWrapper');
+            const emptyState = $('#emptyParticipantsState');
             const tbody = $('#participantsTable tbody');
             if (!tbody.length) return;
+
+            if (participants.length === 0) {
+                tbody.empty();
+                tableWrapper.addClass('d-none');
+                emptyState.removeClass('d-none');
+                return;
+            }
+
+            tableWrapper.removeClass('d-none');
+            emptyState.addClass('d-none');
 
             const existingRows = new Map();
             tbody.find('tr.participant-row').each(function() {
