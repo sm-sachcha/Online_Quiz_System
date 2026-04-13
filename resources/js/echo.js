@@ -3,7 +3,10 @@ import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
 window.Pusher = Pusher;
 
-const reverbHost = import.meta.env.VITE_REVERB_HOST ?? window.location.hostname;
+const configuredHost = import.meta.env.VITE_REVERB_HOST ?? window.location.hostname;
+const reverbHost = ['127.0.0.1', 'localhost', '0.0.0.0'].includes(configuredHost)
+    ? window.location.hostname
+    : configuredHost;
 const reverbPort = Number(import.meta.env.VITE_REVERB_PORT ?? 8080);
 const reverbScheme = import.meta.env.VITE_REVERB_SCHEME ?? 'http';
 

@@ -32,14 +32,36 @@ class Quiz extends Model
         parent::boot();
         
         static::creating(function ($quiz) {
-            $quiz->slug = Str::slug($quiz->title);
+            $quiz->slug = static::generateUniqueSlug($quiz->title);
         });
         
         static::updating(function ($quiz) {
             if ($quiz->isDirty('title')) {
-                $quiz->slug = Str::slug($quiz->title);
+                $quiz->slug = static::generateUniqueSlug($quiz->title, $quiz->id);
             }
         });
+    }
+
+    public static function generateUniqueSlug(string $title, ?int $ignoreId = null): string
+    {
+        $baseSlug = Str::slug($title);
+
+        if ($baseSlug === '') {
+            $baseSlug = 'quiz';
+        }
+
+        $slug = $baseSlug;
+        $counter = 1;
+
+        while (static::query()
+            ->when($ignoreId, fn ($query) => $query->whereKeyNot($ignoreId))
+            ->where('slug', $slug)
+            ->exists()) {
+            $slug = $baseSlug . '-' . $counter;
+            $counter++;
+        }
+
+        return $slug;
     }
 
     /**

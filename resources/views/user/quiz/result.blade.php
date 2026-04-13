@@ -231,7 +231,7 @@
                                   </tr>
                                   <tr>
                                     <td width="40%"><strong>Started:</strong></td>
-                                    <td>{{ $attempt->started_at->format('M d, Y h:i A') }}</td>
+                                    <td>{{ optional($performanceMetrics['quiz_started_at'] ?? null)?->format('M d, Y h:i A') ?? $attempt->started_at->format('M d, Y h:i A') }}</td>
                                   </tr>
                                   <tr>
                                     <td width="40%"><strong>Completed:</strong></td>

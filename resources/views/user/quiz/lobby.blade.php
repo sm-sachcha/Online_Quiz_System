@@ -503,11 +503,16 @@
     const quizId = {{ $quiz->id }};
     const userId = {{ Auth::id() ?? 0 }};
     const currentUserName = @json(Auth::user()?->name);
-    const isQuizStarted = {{ isset($quizStartedByAdmin) && $quizStartedByAdmin ? 'true' : 'false' }};
+    let isQuizStarted = {{ isset($quizStartedByAdmin) && $quizStartedByAdmin ? 'true' : 'false' }};
     const initialParticipantId = {{ isset($participant) && $participant ? $participant->id : 'null' }};
     const initialParticipantStatus = @json(isset($participant) && $participant ? $participant->status : null);
     const initialGuestName = @json(session('guest_name'));
     let participants = @json($participants->values());
+    const joinUrl = `/user/quiz/lobby/${quizId}/join`;
+    const leaveUrl = `/user/quiz/lobby/${quizId}/leave`;
+    const heartbeatUrl = `/user/quiz/lobby/${quizId}/heartbeat`;
+    const participantsUrl = `/user/quiz/lobby/${quizId}/participants`;
+    const statusUrl = `/user/quiz/${quizId}/status`;
     let hasLeft = false;
     let isJoined = false;
     let redirectInterval = null;
@@ -515,60 +520,129 @@
     let currentParticipantId = null;
     let channel = null;
     let heartbeatInterval = null;
+    let participantsPollInterval = null;
+    let statusPollInterval = null;
     let leaveSignalSent = false;
+    let participantsSnapshot = '';
     const csrfToken = '{{ csrf_token() }}';
+
+    async function requestJson(url, options = {}) {
+        const response = await fetch(url, {
+            credentials: 'same-origin',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json',
+                ...(options.headers || {})
+            },
+            ...options
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+        const rawBody = await response.text();
+        const data = contentType.includes('application/json') && rawBody
+            ? JSON.parse(rawBody)
+            : {};
+
+        if (!response.ok) {
+            throw new Error(data.error || data.message || `Request failed with status ${response.status}`);
+        }
+
+        return data;
+    }
 
     function initRealtimeChannel() {
         if (channel || typeof window.initializeEcho !== 'function') {
             return;
         }
 
-        channel = window.initializeEcho(quizId, {
-            onParticipantJoined(event) {
-                const participant = event.participant;
+        try {
+            channel = window.initializeEcho(quizId, {
+                onParticipantJoined(event) {
+                    const participant = event.participant;
 
-                if (!participant) {
-                    return;
-                }
+                    if (!participant) {
+                        return;
+                    }
 
-                upsertParticipant(participant);
-                showNotification(`${participant.name} joined the lobby!`, 'info');
-            },
-            onParticipantLeft(event) {
-                const participant = event.participant;
+                    upsertParticipant(participant);
+                    showNotification(`${participant.name} joined the lobby!`, 'info');
+                },
+                onParticipantLeft(event) {
+                    const participant = event.participant;
 
-                if (!participant) {
-                    return;
-                }
+                    if (!participant) {
+                        return;
+                    }
 
-                removeParticipant(participant);
-                showNotification(`${participant.name} left the lobby`, 'warning');
-            },
-            onLobbyUpdated(event) {
-                if (Array.isArray(event.participants)) {
-                    participants = event.participants;
-                    renderParticipants();
+                    removeParticipant(participant);
+                    showNotification(`${participant.name} left the lobby`, 'warning');
+                },
+                onLobbyUpdated(event) {
+                    if (Array.isArray(event.participants)) {
+                        participants = event.participants;
+                        renderParticipants();
+                    }
+                },
+                onQuizStarted(event) {
+                    isQuizStarted = true;
+                    if (shouldAutoStartQuiz()) {
+                        const redirectUrl = event.redirect_url || `/user/quiz/start/${quizId}`;
+                        showNotification('Quiz is starting now!', 'success');
+                        setTimeout(() => beginQuizStartRedirect(redirectUrl), 300);
+                    } else {
+                        updateJoinButtonText();
+                    }
+                },
+                onQuizEnded() {
+                    showNotification('This quiz has ended.', 'warning');
+                    setTimeout(() => window.location.reload(), 1200);
+                },
+                onParticipantsUpdated(event) {
+                    const payload = event.payload || {};
+                    if (Array.isArray(payload.lobby_participants)) {
+                        participants = payload.lobby_participants;
+                        renderParticipants();
+                    }
                 }
-            },
-            onQuizStarted(event) {
-                if (isJoined && !hasLeft && !isRedirecting) {
-                    const redirectUrl = event.redirect_url || `/user/quiz/start/${quizId}`;
-                    showNotification('Quiz is starting now!', 'success');
-                    setTimeout(() => window.showQuizStartCountdown(3, redirectUrl), 300);
-                }
-            },
-            onQuizEnded() {
-                showNotification('This quiz has ended.', 'warning');
-                setTimeout(() => window.location.reload(), 1200);
-            },
-            onParticipantsUpdated(event) {
-                const payload = event.payload || {};
-                if (Array.isArray(payload.lobby_participants)) {
-                    participants = payload.lobby_participants;
-                    renderParticipants();
-                }
-            }
-        });
+            });
+        } catch (error) {
+            channel = null;
+            console.warn('Realtime channel initialization failed:', error);
+        }
+    }
+
+    function updateJoinButtonText() {
+        const joinBtn = document.querySelector('.join-btn');
+        const joinTitle = document.querySelector('.join-modal-title');
+        if (joinBtn && isQuizStarted) {
+            joinBtn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Join And Start';
+        }
+        if (joinTitle && isQuizStarted) {
+            joinTitle.innerHTML = '<i class="fas fa-user-plus"></i> Join And Start Quiz';
+        }
+    }
+
+    function hasActiveLobbyIdentity() {
+        return Boolean(
+            isJoined ||
+            currentParticipantId ||
+            initialParticipantId ||
+            sessionStorage.getItem('joined_quiz_' + quizId) === 'true'
+        );
+    }
+
+    function shouldAutoStartQuiz() {
+        return hasActiveLobbyIdentity() && !hasLeft && !isRedirecting;
+    }
+
+    function buildParticipantsSnapshot(items) {
+        return JSON.stringify((items || []).map((participant) => ({
+            id: participant.id || null,
+            user_id: participant.user_id || null,
+            name: participant.name || '',
+            is_guest: !!participant.is_guest,
+            status: participant.status || 'joined',
+        })));
     }
 
     function upsertParticipant(participant) {
@@ -605,11 +679,49 @@
         renderParticipants();
     }
 
+    function getParticipantKey(participant) {
+        if (participant.id) return `participant:${participant.id}`;
+        if (participant.user_id) return `user:${participant.user_id}`;
+        return `name:${participant.name || 'guest'}`;
+    }
+
+    function buildParticipantMarkup(participant) {
+        const isCurrentUser = (userId && participant.user_id === userId) ||
+            (currentParticipantId && participant.id === currentParticipantId) ||
+            (participant.name === sessionStorage.getItem('guest_name_' + quizId));
+        const isGuest = participant.is_guest || false;
+        const isTakingQuiz = participant.status === 'taking_quiz';
+
+        return `
+            <div class="avatar-sm me-3">
+                ${(participant.name || '?').charAt(0).toUpperCase()}
+            </div>
+            <div class="flex-grow-1">
+                <strong>${escapeHtml(participant.name)}</strong>
+                ${isGuest ? '<span class="guest-badge">Guest</span>' : ''}
+                ${isTakingQuiz ? '<span class="taking-quiz-badge ms-1"><i class="fas fa-play"></i> Taking Quiz</span>' : ''}
+                ${isCurrentUser ? '<br><small class="text-muted">You</small>' : ''}
+            </div>
+            <div>
+                <span class="online-indicator ${isTakingQuiz ? 'online-indicator-taking' : ''}"></span>
+            </div>
+        `;
+    }
+
     function redirectToQuizStart() {
         if (isRedirecting) return;
         stopLobbyHeartbeat();
         isRedirecting = true;
+        leaveSignalSent = true;
         window.location.href = `/user/quiz/start/${quizId}`;
+    }
+
+    function beginQuizStartRedirect(redirectUrl = null) {
+        if (isRedirecting) return;
+        stopLobbyHeartbeat();
+        isRedirecting = true;
+        leaveSignalSent = true;
+        window.showQuizStartCountdown(3, redirectUrl || `/user/quiz/start/${quizId}`);
     }
 
     function startLobbyHeartbeat() {
@@ -622,13 +734,11 @@
                 return;
             }
 
-            fetch(`/user/quiz/lobby/${quizId}/heartbeat`, {
+            requestJson(heartbeatUrl, {
                 method: 'POST',
                 headers: {
                     'X-CSRF-TOKEN': csrfToken,
-                    'Accept': 'application/json'
-                },
-                credentials: 'same-origin'
+                }
             }).catch(() => {});
         }, 15000);
     }
@@ -640,6 +750,88 @@
 
         clearInterval(heartbeatInterval);
         heartbeatInterval = null;
+    }
+
+    function refreshParticipants() {
+        requestJson(participantsUrl)
+            .then((data) => {
+                if (Array.isArray(data)) {
+                    const nextSnapshot = buildParticipantsSnapshot(data);
+                    if (nextSnapshot === participantsSnapshot) {
+                        return;
+                    }
+
+                    participants = data;
+                    participantsSnapshot = nextSnapshot;
+                    renderParticipants();
+                }
+            })
+            .catch((error) => {
+                console.warn('Participants refresh failed:', error.message);
+            });
+    }
+
+    function startParticipantsPolling() {
+        if (participantsPollInterval) {
+            return;
+        }
+
+        participantsPollInterval = setInterval(() => {
+            if (document.hidden || isRedirecting) {
+                return;
+            }
+
+            refreshParticipants();
+        }, 2000);
+    }
+
+    function stopParticipantsPolling() {
+        if (!participantsPollInterval) {
+            return;
+        }
+
+        clearInterval(participantsPollInterval);
+        participantsPollInterval = null;
+    }
+
+    function syncQuizStartStatus() {
+        requestJson(statusUrl)
+            .then((data) => {
+                if (data.is_started && !isQuizStarted) {
+                    isQuizStarted = true;
+                    updateJoinButtonText();
+
+                    if (shouldAutoStartQuiz()) {
+                        beginQuizStartRedirect(`/user/quiz/start/${quizId}`);
+                    }
+                }
+            })
+            .catch((error) => {
+                console.warn('Quiz status refresh failed:', error.message);
+            });
+    }
+
+    function startStatusPolling() {
+        if (statusPollInterval) {
+            return;
+        }
+
+        statusPollInterval = setInterval(() => {
+            if (document.hidden || isRedirecting) {
+                return;
+            }
+
+            syncQuizStartStatus();
+        }, 2000);
+    }
+
+    function stopStatusPolling() {
+        if (!statusPollInterval) {
+            return;
+        }
+
+        clearInterval(statusPollInterval);
+        statusPollInterval = null;
     }
 
     function notifyLobbyLeave() {
@@ -654,11 +846,11 @@
         leaveData.append('_token', csrfToken);
 
         if (navigator.sendBeacon) {
-            navigator.sendBeacon(`/user/quiz/lobby/${quizId}/leave`, leaveData);
+            navigator.sendBeacon(leaveUrl, leaveData);
             return;
         }
 
-        fetch(`/user/quiz/lobby/${quizId}/leave`, {
+        fetch(leaveUrl, {
             method: 'POST',
             headers: {
                 'X-CSRF-TOKEN': csrfToken,
@@ -687,17 +879,14 @@
         }
         if (guestInput) guestInput.disabled = true;
         
-        fetch(`/user/quiz/lobby/${quizId}/join`, {
+        requestJson(joinUrl, {
             method: 'POST',
             headers: {
                 'X-CSRF-TOKEN': csrfToken,
                 'Content-Type': 'application/json',
-                'Accept': 'application/json'
             },
-            credentials: 'same-origin',
             body: JSON.stringify(data)
         })
-        .then(response => response.json())
         .then(data => {
             if (data.success) {
                 isJoined = true;
@@ -724,6 +913,9 @@
                 });
                 initRealtimeChannel();
                 startLobbyHeartbeat();
+                startParticipantsPolling();
+                startStatusPolling();
+                refreshParticipants();
                 
                 if (isQuizStarted) {
                     redirectToQuizStart();
@@ -741,7 +933,7 @@
         })
         .catch(error => {
             console.error('Error joining:', error);
-            alert('Network error. Please try again.');
+            alert(error.message || 'Failed to join lobby. Please try again.');
             if (btnToDisable) {
                 btnToDisable.disabled = false;
                 btnToDisable.innerHTML = guestName ? 'Join Lobby' : '<i class="fas fa-sign-in-alt"></i> Join Lobby';
@@ -759,19 +951,18 @@
             leaveBtn.innerHTML = '<span class="leave-loading"></span> Leaving...';
         }
         
-        fetch(`/user/quiz/lobby/${quizId}/leave`, {
+        requestJson(leaveUrl, {
             method: 'POST',
             headers: {
                 'X-CSRF-TOKEN': csrfToken,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            },
-            credentials: 'same-origin'
+                'Content-Type': 'application/json'
+            }
         })
-        .then(response => response.json())
         .then(data => {
             if (data.success) {
                 stopLobbyHeartbeat();
+                stopParticipantsPolling();
+                stopStatusPolling();
                 hasLeft = true;
                 leaveSignalSent = true;
                 isJoined = false;
@@ -790,7 +981,7 @@
         })
         .catch(error => {
             console.error('Error leaving lobby:', error);
-            alert('Network error. Please try again.');
+            alert(error.message || 'Failed to leave lobby. Please try again.');
             if (leaveBtn) {
                 leaveBtn.disabled = false;
                 leaveBtn.innerHTML = 'Leave Lobby';
@@ -803,40 +994,47 @@
         if (!list) return;
         
         if (!participants || participants.length === 0) {
+            participantsSnapshot = buildParticipantsSnapshot([]);
             list.innerHTML = '<div class="text-center py-3 text-muted"><i class="fas fa-user-friends"></i> No active participants</div>';
             document.getElementById('participantCount').textContent = '0';
             return;
         }
-        
-        list.innerHTML = '';
-        participants.forEach(participant => {
-            const isCurrentUser = (userId && participant.user_id === userId) || 
-                                 (currentParticipantId && participant.id === currentParticipantId) ||
-                                 (participant.name === sessionStorage.getItem('guest_name_' + quizId));
-            const isGuest = participant.is_guest || false;
+
+        participantsSnapshot = buildParticipantsSnapshot(participants);
+
+        const existingItems = new Map();
+        Array.from(list.querySelectorAll('[data-participant-key]')).forEach((node) => {
+            existingItems.set(node.dataset.participantKey, node);
+        });
+
+        const orderedNodes = participants.map((participant) => {
+            const key = getParticipantKey(participant);
+            const isCurrentUser = (userId && participant.user_id === userId) ||
+                (currentParticipantId && participant.id === currentParticipantId) ||
+                (participant.name === sessionStorage.getItem('guest_name_' + quizId));
             const isTakingQuiz = participant.status === 'taking_quiz';
-            
-            const item = document.createElement('div');
+            let item = existingItems.get(key);
+
+            if (!item) {
+                item = document.createElement('div');
+                item.dataset.participantKey = key;
+            }
+
             item.className = 'list-group-item participant-item d-flex align-items-center';
             if (isCurrentUser) item.classList.add('current-user');
             if (isTakingQuiz) item.classList.add('taking-quiz-user');
-            
-            item.innerHTML = `
-                <div class="avatar-sm me-3">
-                    ${(participant.name || '?').charAt(0).toUpperCase()}
-                </div>
-                <div class="flex-grow-1">
-                    <strong>${escapeHtml(participant.name)}</strong>
-                    ${isGuest ? '<span class="guest-badge">Guest</span>' : ''}
-                    ${isTakingQuiz ? '<span class="taking-quiz-badge ms-1"><i class="fas fa-play"></i> Taking Quiz</span>' : ''}
-                    ${isCurrentUser ? '<br><small class="text-muted">You</small>' : ''}
-                </div>
-                <div>
-                    <span class="online-indicator ${isTakingQuiz ? 'online-indicator-taking' : ''}"></span>
-                </div>
-            `;
-            list.appendChild(item);
+
+            const nextMarkup = buildParticipantMarkup(participant);
+            if (item.innerHTML !== nextMarkup) {
+                item.innerHTML = nextMarkup;
+            }
+
+            existingItems.delete(key);
+            return item;
         });
+
+        existingItems.forEach((node) => node.remove());
+        list.replaceChildren(...orderedNodes);
         
         document.getElementById('participantCount').textContent = participants.length;
     }
@@ -872,6 +1070,8 @@
                 if (joinedInfoDiv) joinedInfoDiv.style.display = 'block';
             }
             startLobbyHeartbeat();
+            startParticipantsPolling();
+            startStatusPolling();
             initRealtimeChannel();
             if (isQuizStarted) {
                 redirectToQuizStart();
@@ -907,6 +1107,8 @@
             }
 
             startLobbyHeartbeat();
+            startParticipantsPolling();
+            startStatusPolling();
 
             initRealtimeChannel();
 
@@ -963,14 +1165,29 @@
     checkIfAlreadyJoined();
     renderParticipants();
     initRealtimeChannel();
+    refreshParticipants();
+    syncQuizStartStatus();
+    startParticipantsPolling();
+    startStatusPolling();
     
     window.addEventListener('beforeunload', function() {
         if (redirectInterval) clearInterval(redirectInterval);
-        notifyLobbyLeave();
+        stopParticipantsPolling();
+        stopStatusPolling();
+        stopLobbyHeartbeat();
     });
 
     window.addEventListener('pagehide', function() {
-        notifyLobbyLeave();
+        stopParticipantsPolling();
+        stopStatusPolling();
+        stopLobbyHeartbeat();
+    });
+
+    document.addEventListener('visibilitychange', function() {
+        if (!document.hidden) {
+            refreshParticipants();
+            syncQuizStartStatus();
+        }
     });
 </script>
 @endpush

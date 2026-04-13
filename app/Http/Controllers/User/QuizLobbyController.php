@@ -130,13 +130,32 @@ class QuizLobbyController extends Controller
                     ['quiz_id' => $quiz->id, 'user_id' => $user->id],
                     ['status' => 'joined', 'is_guest' => false, 'joined_at' => now()]
                 );
-                
+
+                $wasRecentlyCreated = $participant->wasRecentlyCreated;
+                $previousStatus = $wasRecentlyCreated ? null : $participant->status;
+                $shouldBroadcastJoin = $wasRecentlyCreated;
+
                 if ($userHasInProgress) {
                     $participant->update(['status' => 'taking_quiz']);
-                } elseif ($participant->status === 'left') {
-                    $participant->update(['status' => 'joined', 'joined_at' => now()]);
                 } elseif ($participant->status !== 'joined') {
-                    $participant->update(['status' => 'joined', 'joined_at' => now()]);
+                    $participant->update([
+                        'status' => 'joined',
+                        'joined_at' => now(),
+                        'left_at' => null,
+                    ]);
+                    $shouldBroadcastJoin = true;
+                } else {
+                    $participant->update([
+                        'left_at' => null,
+                    ]);
+                }
+
+                if ($previousStatus === 'taking_quiz' && $participant->fresh()?->status === 'joined') {
+                    $shouldBroadcastJoin = true;
+                }
+
+                if ($shouldBroadcastJoin) {
+                    $this->broadcastParticipantJoinedState($quiz, $participant->fresh(['user']));
                 }
             }
         } else {
@@ -144,6 +163,7 @@ class QuizLobbyController extends Controller
             $guestName = session('guest_name');
             if ($guestName && !$hasCompleted && !$quizEnded) {
                 $participant = $this->findGuestParticipantBySession($quiz);
+                $shouldBroadcastJoin = false;
                 
                 if (!$participant) {
                     $participant = QuizParticipant::create([
@@ -154,8 +174,21 @@ class QuizLobbyController extends Controller
                         'status' => 'joined',
                         'joined_at' => now()
                     ]);
-                } elseif ($participant->status === 'left') {
-                    $participant->update(['status' => 'joined', 'joined_at' => now()]);
+                    $shouldBroadcastJoin = true;
+                } else {
+                    $previousStatus = $participant->status;
+                    $participant->update([
+                        'session_id' => session()->getId(),
+                        'guest_name' => $guestName,
+                        'status' => 'joined',
+                        'joined_at' => $previousStatus === 'joined' ? $participant->joined_at : now(),
+                        'left_at' => null,
+                    ]);
+                    $shouldBroadcastJoin = $previousStatus !== 'joined';
+                }
+
+                if ($shouldBroadcastJoin) {
+                    $this->broadcastParticipantJoinedState($quiz, $participant->fresh(['user']));
                 }
             }
         }
@@ -316,15 +349,26 @@ class QuizLobbyController extends Controller
             // Create or update participant
             $participant = null;
             
+            $wasRecentlyCreated = false;
+            $previousStatus = null;
+
             if ($user) {
+                $existingParticipant = QuizParticipant::where('quiz_id', $quiz->id)
+                    ->where('user_id', $user->id)
+                    ->first();
+                $previousStatus = $existingParticipant?->status;
+
                 $participant = QuizParticipant::updateOrCreate(
                     ['quiz_id' => $quiz->id, 'user_id' => $user->id],
                     [
                         'status' => 'joined',
                         'joined_at' => now(),
+                        'left_at' => null,
                         'is_guest' => false
                     ]
                 );
+
+                $wasRecentlyCreated = $existingParticipant === null;
             } else {
                 // Guest user
                 if (!$guestName || trim($guestName) == '') {
@@ -357,10 +401,13 @@ class QuizLobbyController extends Controller
                 session(['guest_name' => $guestName]);
                 
                 if ($participant) {
+                    $previousStatus = $participant->status;
                     $participant->update([
                         'guest_name' => $guestName,
                         'status' => 'joined',
-                        'joined_at' => now()
+                        'joined_at' => now(),
+                        'left_at' => null,
+                        'session_id' => session()->getId(),
                     ]);
                 } else {
                     $participant = QuizParticipant::create([
@@ -371,16 +418,18 @@ class QuizLobbyController extends Controller
                         'status' => 'joined',
                         'joined_at' => now()
                     ]);
+                    $wasRecentlyCreated = true;
                 }
             }
             
-            // Broadcast to other participants
-            try {
-                $participant->loadMissing('user');
-                broadcast(new ParticipantJoined($participant, $quiz))->toOthers();
-                broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
-            } catch (\Exception $e) {
-                Log::warning('Broadcast failed: ' . $e->getMessage());
+            if ($participant) {
+                $participant = $participant->fresh(['user']);
+            }
+
+            if ($participant && ($wasRecentlyCreated || $previousStatus !== 'joined')) {
+                $this->broadcastParticipantJoinedState($quiz, $participant);
+            } else {
+                $this->broadcastParticipantsPayload($quiz);
             }
             
             return response()->json([
@@ -436,9 +485,9 @@ class QuizLobbyController extends Controller
                 ]);
                 
                 try {
-                    $participant->loadMissing('user');
-                    broadcast(new ParticipantLeft($participant, $quiz))->toOthers();
-                    broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
+                    $participant = $participant->fresh(['user']);
+                    broadcast(new ParticipantLeft($participant, $quiz));
+                    $this->broadcastParticipantsPayload($quiz);
                 } catch (\Exception $e) {
                     Log::warning('Broadcast failed: ' . $e->getMessage());
                 }
@@ -471,7 +520,8 @@ class QuizLobbyController extends Controller
     public function participants(Quiz $quiz)
     {
         try {
-            $participants = QuizParticipant::where('quiz_id', $quiz->id)
+            $participants = QuizParticipant::with('user')
+                ->where('quiz_id', $quiz->id)
                 ->where('status', 'joined')
                 ->orderBy('joined_at', 'asc')
                 ->get()
@@ -605,5 +655,23 @@ class QuizLobbyController extends Controller
 
                 return mb_strtolower(trim($displayName)) === $normalizedGuestName;
             });
+    }
+
+    private function broadcastParticipantJoinedState(Quiz $quiz, QuizParticipant $participant): void
+    {
+        try {
+            broadcast(new ParticipantJoined($participant, $quiz));
+            $this->broadcastParticipantsPayload($quiz);
+        } catch (\Exception $e) {
+            Log::warning('Joined-state broadcast failed: ' . $e->getMessage());
+        }
+    }
+
+    private function broadcastParticipantsPayload(Quiz $quiz): void
+    {
+        broadcast(new QuizParticipantsUpdated(
+            $quiz,
+            $this->quizParticipantsPayloadService->build($quiz)
+        ));
     }
 }

@@ -12,6 +12,10 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- DataTables -->
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css">
+    <!-- Pusher JS for WebSocket -->
+    <script src="https://js.pusher.com/7.2/pusher.min.js"></script>
+    <!-- Laravel Echo -->
+    <script src="https://cdn.jsdelivr.net/npm/laravel-echo@1.15.0/dist/echo.iife.js"></script>
     <style>
         .wrapper {
             display: flex;
@@ -281,9 +285,91 @@
             document.body.appendChild(spinner);
             return spinner;
         };
-        
+
         window.hideLoading = function(spinner) {
             if (spinner) spinner.remove();
+        };
+
+        window.resolveEchoInstance = function() {
+            const existingInstance = window.__quizEchoInstance
+                || (window.Echo && typeof window.Echo.channel === 'function' ? window.Echo : null);
+
+            if (existingInstance) {
+                return existingInstance;
+            }
+
+            const EchoConstructor =
+                (typeof window.Echo === 'function' ? window.Echo : null)
+                || (window.Echo && typeof window.Echo.default === 'function' ? window.Echo.default : null)
+                || (typeof window.LaravelEcho === 'function' ? window.LaravelEcho : null)
+                || (window.LaravelEcho && typeof window.LaravelEcho.default === 'function' ? window.LaravelEcho.default : null)
+                || (typeof Echo === 'function' ? Echo : null);
+
+            if (!EchoConstructor || typeof Pusher === 'undefined') {
+                return null;
+            }
+
+            const configuredHost = '{{ env('VITE_REVERB_HOST', env('REVERB_HOST', '127.0.0.1')) }}';
+            const websocketHost = ['127.0.0.1', 'localhost', '0.0.0.0'].includes(configuredHost)
+                ? window.location.hostname
+                : configuredHost;
+
+            window.__quizEchoInstance = new EchoConstructor({
+                broadcaster: 'reverb',
+                key: '{{ env('VITE_REVERB_APP_KEY', env('REVERB_APP_KEY')) }}',
+                wsHost: websocketHost,
+                wsPort: Number('{{ env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)) }}'),
+                wssPort: Number('{{ env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)) }}'),
+                forceTLS: '{{ env('VITE_REVERB_SCHEME', env('REVERB_SCHEME', 'http')) }}' === 'https',
+                authEndpoint: '/broadcasting/auth',
+                enabledTransports: ['ws', 'wss'],
+                disableStats: true,
+            });
+
+            window.Echo = window.__quizEchoInstance;
+
+            return window.__quizEchoInstance;
+        };
+
+        window.initializeEcho = function(quizId, callbacks) {
+            const echoInstance = window.resolveEchoInstance();
+
+            if (!quizId || !echoInstance || typeof echoInstance.channel !== 'function') {
+                return null;
+            }
+
+            const channelName = 'quiz.' + quizId;
+
+            try {
+                echoInstance.leaveChannel(channelName);
+            } catch (e) {
+                // channel not yet subscribed
+            }
+
+            const channel = echoInstance.channel(channelName);
+
+            if (callbacks) {
+                if (callbacks.onParticipantJoined) {
+                    channel.listen('.participant.joined', callbacks.onParticipantJoined);
+                }
+                if (callbacks.onParticipantLeft) {
+                    channel.listen('.participant.left', callbacks.onParticipantLeft);
+                }
+                if (callbacks.onLobbyUpdated) {
+                    channel.listen('.lobby.updated', callbacks.onLobbyUpdated);
+                }
+                if (callbacks.onParticipantsUpdated) {
+                    channel.listen('.participants.updated', callbacks.onParticipantsUpdated);
+                }
+                if (callbacks.onQuizStarted) {
+                    channel.listen('.quiz.started', callbacks.onQuizStarted);
+                }
+                if (callbacks.onQuizEnded) {
+                    channel.listen('.quiz.ended', callbacks.onQuizEnded);
+                }
+            }
+
+            return channel;
         };
     </script>
     @stack('scripts')

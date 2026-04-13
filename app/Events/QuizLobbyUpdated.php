@@ -5,11 +5,11 @@ namespace App\Events;
 use Illuminate\Broadcasting\Channel;
 use App\Models\Quiz;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class QuizLobbyUpdated implements ShouldBroadcast
+class QuizLobbyUpdated implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 

@@ -315,39 +315,67 @@
             if (spinner) spinner.remove();
         };
         
-        // Initialize the shared quiz channel with Laravel Echo / Reverb.
-        window.initializeEcho = function(quizId, callbacks) {
-            const EchoConstructor = typeof window.Echo === 'function'
-                ? window.Echo
-                : (typeof Echo !== 'undefined' ? Echo : null);
+        window.resolveEchoInstance = function() {
+            const existingInstance = window.__quizEchoInstance
+                || (window.Echo && typeof window.Echo.channel === 'function' ? window.Echo : null);
 
-            if ((!window.Echo || typeof window.Echo.channel !== 'function') && EchoConstructor && typeof Pusher !== 'undefined') {
-                window.Echo = new EchoConstructor({
-                    broadcaster: 'pusher',
-                    key: '{{ env('VITE_REVERB_APP_KEY', env('REVERB_APP_KEY')) }}',
-                    wsHost: '{{ env('VITE_REVERB_HOST', env('REVERB_HOST', '127.0.0.1')) }}',
-                    wsPort: Number('{{ env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)) }}'),
-                    wssPort: Number('{{ env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)) }}'),
-                    forceTLS: '{{ env('VITE_REVERB_SCHEME', env('REVERB_SCHEME', 'http')) }}' === 'https',
-                    authEndpoint: '/broadcasting/auth',
-                    enabledTransports: ['ws', 'wss'],
-                    disableStats: true,
-                });
+            if (existingInstance) {
+                return existingInstance;
             }
 
-            if (!quizId || typeof window.Echo === 'undefined') {
+            const EchoConstructor =
+                (typeof window.Echo === 'function' ? window.Echo : null)
+                || (window.Echo && typeof window.Echo.default === 'function' ? window.Echo.default : null)
+                || (typeof window.LaravelEcho === 'function' ? window.LaravelEcho : null)
+                || (window.LaravelEcho && typeof window.LaravelEcho.default === 'function' ? window.LaravelEcho.default : null)
+                || (typeof Echo === 'function' ? Echo : null);
+
+            if (!EchoConstructor || typeof Pusher === 'undefined') {
                 return null;
             }
 
-            const channelName = `quiz.${quizId}`;
+            const configuredHost = '{{ env('VITE_REVERB_HOST', env('REVERB_HOST', '127.0.0.1')) }}';
+            const websocketHost = ['127.0.0.1', 'localhost', '0.0.0.0'].includes(configuredHost)
+                ? window.location.hostname
+                : configuredHost;
 
-            try {
-                window.Echo.leaveChannel(channelName);
-            } catch (error) {
-                console.debug('Echo channel reset skipped', error);
+            window.__quizEchoInstance = new EchoConstructor({
+                broadcaster: 'reverb',
+                key: '{{ env('VITE_REVERB_APP_KEY', env('REVERB_APP_KEY')) }}',
+                wsHost: websocketHost,
+                wsPort: Number('{{ env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)) }}'),
+                wssPort: Number('{{ env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)) }}'),
+                forceTLS: '{{ env('VITE_REVERB_SCHEME', env('REVERB_SCHEME', 'http')) }}' === 'https',
+                authEndpoint: '/broadcasting/auth',
+                enabledTransports: ['ws', 'wss'],
+                disableStats: true,
+            });
+
+            window.Echo = window.__quizEchoInstance;
+
+            return window.__quizEchoInstance;
+        };
+
+        // Initialize the shared quiz channel with Laravel Echo / Reverb.
+        window.initializeEcho = function(quizId, callbacks) {
+            const echoInstance = window.resolveEchoInstance();
+
+            if (!quizId || !echoInstance || typeof echoInstance.channel !== 'function') {
+                return null;
             }
 
-            const channel = window.Echo.channel(channelName);
+            if (window.__quizEchoChannelName) {
+                const configuredHost = '{{ env('VITE_REVERB_HOST', env('REVERB_HOST', '127.0.0.1')) }}';
+                try {
+                    echoInstance.leaveChannel(window.__quizEchoChannelName);
+                } catch (error) {
+                    console.debug('Echo channel reset skipped', error);
+                }
+            }
+
+            const channelName = `quiz.${quizId}`;
+            const channel = echoInstance.channel(channelName);
+            window.__quizEchoChannelName = channelName;
 
             if (callbacks) {
                 if (callbacks.onQuizStarted) {
@@ -389,37 +417,21 @@
         };
 
         window.initializeAttemptEcho = function(attemptId, callbacks) {
-            const EchoConstructor = typeof window.Echo === 'function'
-                ? window.Echo
-                : (typeof Echo !== 'undefined' ? Echo : null);
+            const echoInstance = window.resolveEchoInstance();
 
-            if ((!window.Echo || typeof window.Echo.channel !== 'function') && EchoConstructor && typeof Pusher !== 'undefined') {
-                window.Echo = new EchoConstructor({
-                    broadcaster: 'pusher',
-                    key: '{{ env('VITE_REVERB_APP_KEY', env('REVERB_APP_KEY')) }}',
-                    wsHost: '{{ env('VITE_REVERB_HOST', env('REVERB_HOST', '127.0.0.1')) }}',
-                    wsPort: Number('{{ env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)) }}'),
-                    wssPort: Number('{{ env('VITE_REVERB_PORT', env('REVERB_PORT', 8080)) }}'),
-                    forceTLS: '{{ env('VITE_REVERB_SCHEME', env('REVERB_SCHEME', 'http')) }}' === 'https',
-                    authEndpoint: '/broadcasting/auth',
-                    enabledTransports: ['ws', 'wss'],
-                    disableStats: true,
-                });
-            }
-
-            if (!attemptId || typeof window.Echo === 'undefined') {
+            if (!attemptId || !echoInstance || typeof echoInstance.channel !== 'function') {
                 return null;
             }
 
             const channelName = `quiz.attempt.${attemptId}`;
 
             try {
-                window.Echo.leaveChannel(channelName);
+                echoInstance.leaveChannel(channelName);
             } catch (error) {
                 console.debug('Attempt Echo channel reset skipped', error);
             }
 
-            const channel = window.Echo.channel(channelName);
+            const channel = echoInstance.channel(channelName);
 
             if (callbacks) {
                 if (callbacks.onAttemptQuestionBroadcasted) {

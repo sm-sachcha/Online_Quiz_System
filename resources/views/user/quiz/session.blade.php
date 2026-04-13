@@ -287,6 +287,7 @@
     let waitingForNextQuestion = false;
     let attemptHeartbeatInterval = null;
     let leaveSignalSent = false;
+    let nextQuestionFallbackTimeout = null;
     const csrfToken = '{{ csrf_token() }}';
 
     function isMultipleChoiceQuestion() {
@@ -308,9 +309,13 @@
 
     function submitAnswerOnTimerEnd() {
         if (answerSubmitted) return;
-        
-        const elapsedSincePageLoad = Math.floor((Date.now() - startTime) / 1000);
-        const timeTaken = Math.min((parseInt(currentQuestionDuration, 10) - parseInt(questionStartSeconds, 10)) + elapsedSincePageLoad, parseInt(currentQuestionDuration, 10));
+
+        answerSubmitted = true;
+        clearInterval(timerInterval);
+
+        const safeDuration = parseInt(currentQuestionDuration, 10) || 0;
+        const safeTimeLeft = Math.max(0, parseInt(timeLeft, 10) || 0);
+        const timeTaken = Math.max(0, safeDuration - safeTimeLeft);
         document.getElementById('timeTaken').value = timeTaken;
         
         setFormValues();
@@ -333,19 +338,19 @@
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                answerSubmitted = true;
-                clearInterval(timerInterval);
                 updateUI(data);
             } else if (data.redirect_url) {
                 // Attempt already completed, redirect to results
                 isInternalNavigation = true;
                 window.location.href = data.redirect_url;
             } else {
+                answerSubmitted = false;
                 alert('Error: ' + (data.error || 'Unknown error'));
                 hideLoading();
             }
         })
         .catch(err => {
+            answerSubmitted = false;
             console.error('Submit error:', err);
             alert('Network error. Please refresh the page and try again.');
             hideLoading();
@@ -507,6 +512,11 @@
     }
 
     function renderQuestion(question) {
+        if (nextQuestionFallbackTimeout) {
+            clearTimeout(nextQuestionFallbackTimeout);
+            nextQuestionFallbackTimeout = null;
+        }
+
         currentQuestionId = Number(question.question_id);
         currentQuestionType = question.question_type;
         currentQuestionDuration = Number(question.time_seconds);
@@ -724,11 +734,23 @@
         
         hideLoading();
         
-        if (data.is_completed) {
-            showNextQuestionLoader();
-        } else {
-            showNextQuestionLoader();
+        showNextQuestionLoader();
+
+        if (nextQuestionFallbackTimeout) {
+            clearTimeout(nextQuestionFallbackTimeout);
         }
+
+        nextQuestionFallbackTimeout = setTimeout(() => {
+            stopAttemptHeartbeat();
+            isInternalNavigation = true;
+
+            if (data.is_completed) {
+                window.location.href = `/user/quiz/result/${quizId}/${attemptId}`;
+                return;
+            }
+
+            window.location.href = `/user/quiz/attempt/${quizId}/${attemptId}`;
+        }, 2500);
     }
 
     bindOptionHandlers();
@@ -765,55 +787,68 @@
     });
 
     if (typeof window.initializeEcho === 'function') {
-        window.initializeEcho(quizId, {
-            onQuizEnded() {
-                if (answerSubmitted) {
-                    return;
+        try {
+            window.initializeEcho(quizId, {
+                onQuizEnded() {
+                    if (answerSubmitted) {
+                        return;
+                    }
+
+                    answerSubmitted = true;
+
+                    if (timerInterval) clearInterval(timerInterval);
+
+                    showNotification('The quiz was ended by the admin.', 'warning');
+
+                    setTimeout(() => {
+                        stopAttemptHeartbeat();
+                        isInternalNavigation = true;
+                        window.location.href = `/user/quiz/result/${quizId}/${attemptId}`;
+                    }, 1200);
                 }
-
-                answerSubmitted = true;
-
-                if (timerInterval) clearInterval(timerInterval);
-
-                showNotification('The quiz was ended by the admin.', 'warning');
-
-                setTimeout(() => {
-                    stopAttemptHeartbeat();
-                    isInternalNavigation = true;
-                    window.location.href = `/user/quiz/result/${quizId}/${attemptId}`;
-                }, 1200);
-            }
-        });
+            });
+        } catch (error) {
+            console.warn('Quiz realtime initialization failed:', error);
+        }
     }
 
     if (typeof window.initializeAttemptEcho === 'function') {
-        window.initializeAttemptEcho(attemptId, {
-            onAttemptQuestionBroadcasted(event) {
-                if (!event || Number(event.question_id) === Number(currentQuestionId)) {
-                    return;
+        try {
+            window.initializeAttemptEcho(attemptId, {
+                onAttemptQuestionBroadcasted(event) {
+                    if (!event || Number(event.question_id) === Number(currentQuestionId)) {
+                        return;
+                    }
+
+                    renderQuestion(event);
+                },
+                onAttemptResultUpdated(event) {
+                    if (nextQuestionFallbackTimeout) {
+                        clearTimeout(nextQuestionFallbackTimeout);
+                        nextQuestionFallbackTimeout = null;
+                    }
+
+                    const payload = event.payload || {};
+
+                    if (!payload.redirect_url) {
+                        return;
+                    }
+
+                    showNotification(
+                        payload.passed ? 'Quiz completed! Preparing your result...' : 'Quiz finished. Preparing your result...',
+                        payload.passed ? 'success' : 'warning'
+                    );
+
+                    setTimeout(() => {
+                        stopAttemptHeartbeat();
+                        isInternalNavigation = true;
+                        window.location.href = payload.redirect_url;
+                    }, 1200);
                 }
-
-                renderQuestion(event);
-            },
-            onAttemptResultUpdated(event) {
-                const payload = event.payload || {};
-
-                if (!payload.redirect_url) {
-                    return;
-                }
-
-                showNotification(
-                    payload.passed ? 'Quiz completed! Preparing your result...' : 'Quiz finished. Preparing your result...',
-                    payload.passed ? 'success' : 'warning'
-                );
-
-                setTimeout(() => {
-                    stopAttemptHeartbeat();
-                    isInternalNavigation = true;
-                    window.location.href = payload.redirect_url;
-                }, 1200);
-            }
-        });
+            });
+        } catch (error) {
+            console.warn('Attempt realtime initialization failed:', error);
+        }
     }
 
     timeLeft = parseInt(questionStartSeconds, 10);

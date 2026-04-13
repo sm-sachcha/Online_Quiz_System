@@ -418,7 +418,9 @@
         const quizId = {{ $quiz->id }};
         const authUserId = {{ Auth::id() ?? 0 }};
         const initialPayload = @json($payload);
+        const participantsJsonUrl = `/admin/quizzes/${quizId}/participants-json`;
         let activeFilter = 'all';
+        let participantsPollInterval = null;
         
         function escapeHtml(text) {
             const div = document.createElement('div');
@@ -575,12 +577,46 @@
             updateParticipantsTable(payload);
         }
 
+        async function refreshParticipantsPayload() {
+            const response = await fetch(participantsJsonUrl, {
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error(`Participants refresh failed with status ${response.status}`);
+            }
+
+            return response.json();
+        }
+
+        function startParticipantsPolling() {
+            if (participantsPollInterval) {
+                return;
+            }
+
+            participantsPollInterval = setInterval(() => {
+                if (document.hidden) {
+                    return;
+                }
+
+                refreshParticipantsPayload()
+                    .then((payload) => applyRealtimePayload(payload))
+                    .catch((error) => console.warn(error.message));
+            }, 4000);
+        }
+
         $('.filter-btn').click(function() {
             applyFilter($(this).data('filter'));
         });
 
         $('#refreshParticipantsBtn').on('click', function() {
-            window.location.reload();
+            refreshParticipantsPayload()
+                .then((payload) => applyRealtimePayload(payload))
+                .catch(() => window.location.reload());
         });
         
         // Start Quiz Button Handler
@@ -663,17 +699,47 @@
 
         applyRealtimePayload(initialPayload);
         applyFilter('all');
+        startParticipantsPolling();
 
         if (typeof window.initializeEcho === 'function') {
-            window.initializeEcho(quizId, {
-                onParticipantsUpdated(event) {
-                    applyRealtimePayload(event.payload || {});
-                },
-                onQuizEnded() {
-                    setTimeout(() => window.location.reload(), 400);
-                }
-            });
+            try {
+                window.initializeEcho(quizId, {
+                    onParticipantsUpdated(event) {
+                        applyRealtimePayload(event.payload || {});
+                    },
+                    onLobbyUpdated(event) {
+                        if (event.total_participants !== undefined) {
+                            $('#lobbyCount').text(event.total_participants);
+                            $('#filterLobbyCount').text(event.total_participants);
+                        }
+                    },
+                    onQuizStarted() {
+                        const startBtn = document.getElementById('startQuizBtn');
+                        if (startBtn) {
+                            startBtn.style.display = 'none';
+                        }
+                        setTimeout(() => window.location.reload(), 500);
+                    },
+                    onQuizEnded() {
+                        setTimeout(() => window.location.reload(), 400);
+                    }
+                });
+            } catch (error) {
+                console.warn('Admin realtime channel initialization failed:', error);
+            }
         }
+
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                refreshParticipantsPayload()
+                    .then((payload) => applyRealtimePayload(payload))
+                    .catch((error) => console.warn(error.message));
+                }
+        });
+
+        refreshParticipantsPayload()
+            .then((payload) => applyRealtimePayload(payload))
+            .catch((error) => console.warn(error.message));
     });
     
     function copyQuizLink() {

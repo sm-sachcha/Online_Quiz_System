@@ -4,19 +4,8 @@ use Illuminate\Support\Facades\Broadcast;
 use App\Models\QuizParticipant;
 
 Broadcast::channel('quiz.{quizId}', function ($user, $quizId) {
-    $participant = QuizParticipant::where('quiz_id', $quizId)
-        ->where('user_id', $user->id)
-        ->where('status', 'joined')
-        ->first();
-    
-    if ($participant) {
-        return [
-            'id' => $user->id,
-            'name' => $user->name,
-        ];
-    }
-    
-    return false;
+    // Allow anyone to listen to quiz channels for real-time updates
+    return true;
 });
 
 Broadcast::channel('user.{userId}', function ($user, $userId) {

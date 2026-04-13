@@ -67,7 +67,7 @@ class ResultController extends Controller
         // Get all data
         $attemptStats = $this->getAttemptStatistics($attempt, $quiz);
         $leaderboardData = $this->getLeaderboardData($quiz, $attempt);
-        $performanceMetrics = $this->getPerformanceMetrics($attempt);
+        $performanceMetrics = $this->getPerformanceMetrics($attempt, $quiz);
         $attemptInfo = $this->getAttemptInfo($attempt, $quiz);
         $attemptHistory = $this->getAttemptHistory($quiz, $attempt);
         $bestScoreInfo = $this->getBestScoreInfo($quiz, $attempt);
@@ -201,21 +201,27 @@ class ResultController extends Controller
         ];
     }
     
-    private function getPerformanceMetrics(QuizAttempt $attempt)
+    private function getPerformanceMetrics(QuizAttempt $attempt, $quiz)
     {
         $accuracy = $attempt->total_questions > 0 
             ? round(($attempt->correct_answers / $attempt->total_questions) * 100, 1)
             : 0;
+
+        $quizStartedAt = $quiz->scheduled_at ?? $attempt->started_at;
+        $timeTaken = ($attempt->ended_at && $quizStartedAt)
+            ? $attempt->ended_at->diffInSeconds($quizStartedAt)
+            : 0;
         
         return [
             'accuracy' => $accuracy,
-            'time_taken' => $attempt->ended_at ? $attempt->ended_at->diffInSeconds($attempt->started_at) : 0,
+            'time_taken' => $timeTaken,
             'time_per_question' => $attempt->total_questions > 0 && $attempt->ended_at
-                ? round($attempt->ended_at->diffInSeconds($attempt->started_at) / $attempt->total_questions, 1)
+                ? round($timeTaken / $attempt->total_questions, 1)
                 : 0,
             'points_per_question' => $attempt->total_questions > 0
                 ? round($attempt->score / $attempt->total_questions, 1)
                 : 0,
+            'quiz_started_at' => $quizStartedAt,
         ];
     }
     

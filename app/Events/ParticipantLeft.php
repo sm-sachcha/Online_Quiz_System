@@ -7,12 +7,12 @@ use App\Models\QuizParticipant;
 use App\Models\User;
 use App\Models\Quiz;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use stdClass;
 
-class ParticipantLeft implements ShouldBroadcast
+class ParticipantLeft implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
@@ -83,7 +83,7 @@ class ParticipantLeft implements ShouldBroadcast
                 'user_id' => $this->participant['user_id'],
                 'name' => $this->participant['name'],
                 'is_guest' => $this->participant['is_guest'],
-                'left_at' => now(),
+                'left_at' => now()->toIso8601String(),
             ],
         ];
     }
