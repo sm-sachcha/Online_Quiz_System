@@ -169,9 +169,9 @@
                                     <div class="mt-2">
                                         <small>Out of <span id="resultTotalParticipants">{{ $totalParticipants ?? 0 }}</span> participants</small>
                                     </div>
-                                    <div class="mt-1">
+                                    <!-- <div class="mt-1">
                                         <small id="resultTopPercent">Top {{ ($totalParticipants ?? 0) > 0 ? round(($userRank / ($totalParticipants ?? 1)) * 100, 1) : 0 }}%</small>
-                                    </div>
+                                    </div> -->
                                 </div>
                             @else
                                 <div class="rank-card" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%);">
@@ -195,11 +195,11 @@
                                 <div class="stat-number text-danger" id="resultIncorrectAnswers">{{ $attempt->incorrect_answers }}</div>
                                 <div>Incorrect Answers</div>
                             </div>
-                            <div class="stat-box">
+                            <!-- <div class="stat-box">
                                 <div class="stat-number text-info" id="resultAccuracy">{{ $performanceMetrics['accuracy'] ?? 0 }}%</div>
                                 <div>Accuracy</div>
                                 <small class="text-muted"><span id="resultAccuracyBreakdown">{{ $attempt->correct_answers }}/{{ $attempt->total_questions }}</span> questions</small>
-                            </div>
+                            </div> -->
                         </div>
                     </div>
 
@@ -311,7 +311,7 @@
                                 <strong>Current Attempt: {{ $attempt->score }} points</strong>
                                 <br><small class="text-muted">({{ $percentage ?? 0 }}%)</small>
                             </div>
-                            <div class="col-md-4">
+                            <!-- <div class="col-md-4">
                                 <i class="fas fa-chart-line text-success"></i>
                                 @if(isset($bestScoreInfo) && $bestScoreInfo)
                                     <strong>Best Score: {{ $bestScoreInfo['score'] }} points</strong>
@@ -320,7 +320,7 @@
                                     <strong>Best Score: This attempt</strong>
                                     <br><small class="text-muted">{{ $attempt->score }} points ({{ $percentage ?? 0 }}%)</small>
                                 @endif
-                            </div>
+                            </div> -->
                             <div class="col-md-4">
                                 <i class="fas fa-bullseye text-info"></i>
                                 <strong>Current Accuracy: {{ $performanceMetrics['accuracy'] ?? 0 }}%</strong>
