@@ -178,7 +178,7 @@
             <div class="d-flex gap-2">
                 @if(!isset($isQuizStarted) || !$isQuizStarted)
                     @if(isset($hasQuestions) && $hasQuestions)
-                        <button type="button" class="btn btn-success btn-lg start-quiz-btn" id="startQuizBtn">
+                        <button type="button" class="btn btn-success btn-lg start-quiz-btn {{ ($lobbyUsers ?? 0) > 0 ? '' : 'd-none' }}" id="startQuizBtn">
                             <i class="fas fa-play"></i> Start Quiz Now
                         </button>
                     @endif
@@ -221,7 +221,13 @@
                         @else
                             <span class="badge bg-secondary ms-2">WAITING</span>
                             <div class="mt-1">
-                                <small>Waiting for participants to join</small>
+                                <small>
+                                    @if(($lobbyUsers ?? 0) > 0)
+                                        Ready to start
+                                    @else
+                                        Waiting for participants
+                                    @endif
+                                </small>
                             </div>
                         @endif
                     </div>
@@ -524,6 +530,23 @@
             $('#filterLeftCount').text(payload.leftParticipants || 0);
         }
 
+        function updateStartQuizButton(payload) {
+            const lobbyUsers = payload.lobbyUsers || 0;
+            const hasQuestions = !!payload.hasQuestions;
+            const isQuizStarted = !!payload.isQuizStarted;
+            const buttonContainer = startQuizBtn ? startQuizBtn.parentElement : null;
+
+            if (!buttonContainer || !startQuizBtn) {
+                return;
+            }
+
+            if (!isQuizStarted && hasQuestions && lobbyUsers > 0) {
+                startQuizBtn.classList.remove('d-none');
+            } else {
+                startQuizBtn.classList.add('d-none');
+            }
+        }
+
         function updateParticipantsTable(payload) {
             const participants = payload.participants || [];
             const tableWrapper = $('#participantsTableWrapper');
@@ -584,6 +607,7 @@
         function applyRealtimePayload(payload) {
             if (!payload) return;
             updateCounters(payload);
+            updateStartQuizButton(payload);
             updateParticipantsTable(payload);
         }
 

@@ -288,6 +288,19 @@ class QuizController extends Controller
             return redirect()->route('admin.quizzes.participants', $quiz)
                 ->with('error', $message);
         }
+
+        $joinedParticipants = QuizParticipant::where('quiz_id', $quiz->id)
+            ->where('status', 'joined')
+            ->count();
+
+        if ($joinedParticipants < 1) {
+            $message = 'Cannot start quiz until at least 1 participant joins the lobby.';
+            if (request()->ajax()) {
+                return response()->json(['error' => $message], 422);
+            }
+            return redirect()->route('admin.quizzes.participants', $quiz)
+                ->with('error', $message);
+        }
         
         $quiz->update([
             'is_published' => true,
@@ -298,20 +311,16 @@ class QuizController extends Controller
             ]),
         ]);
         
-        $participants = QuizParticipant::where('quiz_id', $quiz->id)
-            ->where('status', 'joined')
-            ->count();
-
         broadcast(new QuizStarted($quiz))->toOthers();
         broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
         
-        $message = 'Quiz has been started! ' . $participants . ' participants have been notified.';
+        $message = 'Quiz has been started! ' . $joinedParticipants . ' participants have been notified.';
         
         if (request()->ajax()) {
             return response()->json([
                 'success' => true,
                 'message' => $message,
-                'participants_notified' => $participants
+                'participants_notified' => $joinedParticipants
             ]);
         }
         

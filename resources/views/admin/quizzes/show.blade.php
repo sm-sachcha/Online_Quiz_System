@@ -62,7 +62,7 @@
                 <h5 class="mb-0"><i class="fas fa-info-circle"></i> Quiz Details</h5>
                 <div>
                     <!-- Start Quiz Button - Only show if quiz is not live yet -->
-                    @if(!$quiz->is_published || ($quiz->scheduled_at && $quiz->scheduled_at > now()))
+                    @if((!$quiz->is_published || ($quiz->scheduled_at && $quiz->scheduled_at > now())) && ($stats['participants_waiting'] ?? 0) > 0)
                         <form action="{{ route('admin.quizzes.start', $quiz) }}" method="POST" class="d-inline" id="startQuizForm">
                             @csrf
                             <button type="submit" class="btn btn-success btn-sm start-quiz-btn" 
@@ -94,6 +94,11 @@
                     <div class="col-md-6">
                         <h4>{{ $quiz->title }}</h4>
                         <p class="text-muted">{{ $quiz->description ?: 'No description provided.' }}</p>
+                        @if((!$quiz->is_published || ($quiz->scheduled_at && $quiz->scheduled_at > now())) && ($stats['participants_waiting'] ?? 0) < 1)
+                            <div class="alert alert-warning">
+                                <i class="fas fa-users"></i> Start Quiz Now will appear after at least 1 participant joins the lobby.
+                            </div>
+                        @endif
                         
                         <table class="table table-bordered">
                             <tr>
