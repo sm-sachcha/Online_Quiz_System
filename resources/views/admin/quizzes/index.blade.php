@@ -50,13 +50,13 @@
                             <thead>
                                 <tr>
                                     <th>ID</th>
-                                    <th>Title</th>
+                                    <th class="text-center">Title</th>
                                     <!-- <th>Category</th> -->
-                                    <th>Questions</th>
-                                    <th>Total Time</th>
-                                    <th>Points</th>
-                                    <th>Status</th>
-                                    <th>Share Link</th>
+                                    <th class="text-center">Questions</th>
+                                    <th class="text-center">Total Time</th>
+                                    <th class="text-center">Points</th>
+                                    <th class="text-center">Status</th>
+                                    <th class="text-center">Share Link</th>
                                     <th class="text-center">Actions</th>
                                  </thead>
                             <tbody>
