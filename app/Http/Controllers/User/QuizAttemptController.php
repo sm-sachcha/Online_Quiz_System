@@ -359,7 +359,16 @@ class QuizAttemptController extends Controller
 
     private function getNextQuestion(Quiz $quiz, QuizAttempt $attempt)
     {
-        $allQuestions = $quiz->questions()->with('options')->orderBy('order')->get();
+        $questionSequence = collect(
+            $attempt->question_sequence ?: $quiz->questions()->orderBy('order')->pluck('id')->all()
+        );
+
+        $allQuestions = Question::with('options')
+            ->where('quiz_id', $quiz->id)
+            ->whereIn('id', $questionSequence->all())
+            ->get()
+            ->sortBy(fn ($question) => $questionSequence->search($question->id))
+            ->values();
         
         if ($allQuestions->isEmpty()) {
             return ['is_completed' => true, 'error' => 'This quiz has no questions.'];
@@ -387,6 +396,8 @@ class QuizAttemptController extends Controller
                 'is_completed' => true
             ];
         }
+
+        $this->quizService->applyAttemptOptionSequence($attempt, $currentQuestion);
 
         return [
             'currentQuestion' => $currentQuestion,
@@ -420,7 +431,14 @@ class QuizAttemptController extends Controller
     private function autoSubmitRemainingQuestions(QuizAttempt $attempt, Quiz $quiz)
     {
         $answeredQuestionIds = $attempt->answers()->pluck('question_id')->toArray();
-        $allQuestions = $quiz->questions()->orderBy('order')->get();
+        $questionSequence = collect(
+            $attempt->question_sequence ?: $quiz->questions()->orderBy('order')->pluck('id')->all()
+        );
+        $allQuestions = Question::where('quiz_id', $quiz->id)
+            ->whereIn('id', $questionSequence->all())
+            ->get()
+            ->sortBy(fn ($question) => $questionSequence->search($question->id))
+            ->values();
         
         foreach ($allQuestions as $question) {
             if (!in_array($question->id, $answeredQuestionIds)) {
@@ -471,7 +489,7 @@ class QuizAttemptController extends Controller
 
             broadcast(new AnswerSubmitted($answer))->toOthers();
 
-            $totalQuestions = $quiz->questions()->count();
+            $totalQuestions = (int) ($attempt->total_questions ?: $quiz->questions()->count());
             $answeredCount = $attempt->answers()->count();
             $isCompleted = $answeredCount >= $totalQuestions;
             
@@ -503,6 +521,7 @@ class QuizAttemptController extends Controller
             $correctOption = null;
             if ($request->question_type !== 'multiple_choice') {
                 $question = Question::with('options')->find($request->question_id);
+                $this->quizService->applyAttemptOptionSequence($attempt, $question);
                 $correctOption = $question->options->where('is_correct', true)->first();
             }
 
@@ -632,7 +651,7 @@ class QuizAttemptController extends Controller
             
             broadcast(new AnswerSubmitted($answer))->toOthers();
             
-            $totalQuestions = $quiz->questions()->count();
+            $totalQuestions = (int) ($attempt->total_questions ?: $quiz->questions()->count());
             $answeredCount = $attempt->answers()->count();
             $isCompleted = $answeredCount >= $totalQuestions;
             

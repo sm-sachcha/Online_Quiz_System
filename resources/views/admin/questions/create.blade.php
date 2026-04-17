@@ -207,6 +207,19 @@
                         </div>
                     </div>
 
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="randomize_options" name="randomize_options" value="1"
+                                   {{ old('randomize_options') ? 'checked' : '' }}>
+                            <label class="form-check-label" for="randomize_options">
+                                <i class="fas fa-random"></i> Randomize this question's options for each participant
+                            </label>
+                            <div class="form-text text-muted">
+                                When enabled, the answer options for this question will appear in a different order for each quiz attempt.
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="d-grid gap-2 mt-3">
                         <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
                             <i class="fas fa-save"></i> Create Question

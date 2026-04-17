@@ -338,6 +338,9 @@
                             @if($quiz->is_random_questions)
                                 <li><i class="fas fa-random text-warning"></i> Questions are randomized</li>
                             @endif
+                            @if($quiz->is_random_options)
+                                <li><i class="fas fa-random text-warning"></i> Options are randomized</li>
+                            @endif
                         </ul>
                     </div>
                 </div>

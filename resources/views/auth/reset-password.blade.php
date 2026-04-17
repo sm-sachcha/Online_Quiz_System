@@ -21,11 +21,14 @@
                         <div class="input-group">
                             <span class="input-group-text"><i class="fas fa-envelope"></i></span>
                             <input type="email" class="form-control @error('email') is-invalid @enderror" 
-                                   id="email" name="email" value="{{ $email ?? old('email') }}" required readonly>
+                                   id="email" name="email" value="{{ old('email', $email) }}" required autocomplete="email" autofocus>
                         </div>
                         @error('email')
                             <div class="invalid-feedback d-block">{{ $message }}</div>
                         @enderror
+                        @if(empty($email))
+                            <small class="text-muted d-block mt-1">Enter the email address for the account you want to reset.</small>
+                        @endif
                     </div>
 
                     <div class="mb-3">

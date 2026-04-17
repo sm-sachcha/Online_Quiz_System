@@ -42,4 +42,9 @@ class Question extends Model
     {
         return $this->hasMany(UserAnswer::class);
     }
+
+    public function getIsRandomizedOptionsAttribute(): bool
+    {
+        return (bool) data_get($this->metadata, 'randomize_options', false);
+    }
 }

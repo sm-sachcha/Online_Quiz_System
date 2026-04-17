@@ -92,6 +92,12 @@
                                                     <i class="fas fa-eye"></i> Show Answer
                                                 </span>
                                             @endif
+                                            @if($question->is_randomized_options)
+                                                <br>
+                                                <span class="badge bg-warning text-dark">
+                                                    <i class="fas fa-random"></i> Randomized Options
+                                                </span>
+                                            @endif
                                         </td>
                                         <td>
                                             @if($question->question_type == 'multiple_choice')

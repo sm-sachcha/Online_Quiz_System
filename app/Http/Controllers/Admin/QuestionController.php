@@ -52,6 +52,7 @@ class QuestionController extends Controller
             'time_seconds' => 'required|integer|min:10|max:300',
             'explanation' => 'nullable|string',
             'show_answer' => 'nullable|boolean',
+            'randomize_options' => 'nullable|boolean',
             'options' => 'required_if:question_type,multiple_choice,single_choice|array|min:2',
             'options.*.text' => 'required|string|min:1',
             'options.*.is_correct' => 'nullable|boolean',
@@ -71,6 +72,9 @@ class QuestionController extends Controller
                 'order' => $order,
                 'explanation' => $request->explanation,
                 'show_answer' => $request->boolean('show_answer', true),
+                'metadata' => [
+                    'randomize_options' => $request->boolean('randomize_options', false),
+                ],
                 'created_by' => Auth::id(),
                 'is_active' => true
             ]);
@@ -144,6 +148,7 @@ class QuestionController extends Controller
             'time_seconds' => 'required|integer|min:10|max:300',
             'explanation' => 'nullable|string',
             'show_answer' => 'nullable|boolean',
+            'randomize_options' => 'nullable|boolean',
             'options' => 'required|array|min:2',
             'options.*.id' => 'nullable|exists:options,id',
             'options.*.text' => 'required|string|min:1',
@@ -158,6 +163,9 @@ class QuestionController extends Controller
                 'time_seconds' => $request->time_seconds,
                 'explanation' => $request->explanation,
                 'show_answer' => $request->boolean('show_answer', true),
+                'metadata' => array_merge($question->metadata ?? [], [
+                    'randomize_options' => $request->boolean('randomize_options', false),
+                ]),
             ]);
 
             $existingOptionIds = $question->options()->pluck('id')->toArray();

@@ -197,6 +197,19 @@
                         </div>
                     </div>
 
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="randomize_options" name="randomize_options" value="1"
+                                   {{ old('randomize_options', $question->is_randomized_options) ? 'checked' : '' }}>
+                            <label class="form-check-label" for="randomize_options">
+                                <i class="fas fa-random"></i> Randomize this question's options for each participant
+                            </label>
+                            <div class="form-text text-muted">
+                                When enabled, the answer options for this question will appear in a different order for each quiz attempt.
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="alert alert-warning">
                         <i class="fas fa-exclamation-triangle"></i> 
                         <strong>Note:</strong> Changing question options may affect existing answers.

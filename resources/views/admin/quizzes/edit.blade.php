@@ -183,6 +183,19 @@
 
                         <div class="col-md-6">
                             <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="is_random_options"
+                                       name="is_random_options" value="1"
+                                       {{ old('is_random_options', $quiz->is_random_options) ? 'checked' : '' }}>
+                                <label class="form-check-label" for="is_random_options">
+                                    Randomize Option Order
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check">
                                 <input type="checkbox" class="form-check-input" id="is_published" 
                                        name="is_published" value="1" 
                                        {{ old('is_published', $quiz->is_published) ? 'checked' : '' }}>

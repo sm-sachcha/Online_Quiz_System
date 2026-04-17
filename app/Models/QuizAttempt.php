@@ -12,12 +12,15 @@ class QuizAttempt extends Model
     protected $fillable = [
         'user_id', 'participant_id', 'quiz_id', 'score', 'total_points', 
         'correct_answers', 'incorrect_answers', 'total_questions', 
-        'started_at', 'ended_at', 'status', 'cheating_logs', 'ip_address'
+        'question_sequence', 'option_sequences', 'started_at', 'ended_at',
+        'status', 'cheating_logs', 'ip_address'
     ];
 
     protected $casts = [
         'started_at' => 'datetime',
         'ended_at' => 'datetime',
+        'question_sequence' => 'array',
+        'option_sequences' => 'array',
         'cheating_logs' => 'array',
         'score' => 'integer',
         'total_points' => 'integer',

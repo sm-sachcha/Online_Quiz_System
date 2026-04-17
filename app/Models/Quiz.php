@@ -12,13 +12,14 @@ class Quiz extends Model
 
     protected $fillable = [
         'title', 'slug', 'description', 'category_id', 'duration_minutes',
-        'total_questions', 'passing_score', 'is_random_questions', 'is_published',
+        'total_questions', 'passing_score', 'is_random_questions', 'is_random_options', 'is_published',
         'scheduled_at', 'ends_at', 'max_attempts', 'total_points', 'settings',
         'created_by', 'updated_by'
     ];
 
     protected $casts = [
         'is_random_questions' => 'boolean',
+        'is_random_options' => 'boolean',
         'is_published' => 'boolean',
         'scheduled_at' => 'datetime',
         'ends_at' => 'datetime',

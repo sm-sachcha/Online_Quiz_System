@@ -10,6 +10,7 @@ use App\Models\QuizParticipant;
 use App\Events\QuizStarted;
 use App\Events\QuizEnded;
 use App\Events\QuestionBroadcasted;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -18,53 +19,64 @@ class QuizService
     /**
      * Start a new quiz attempt
      */
-public function startQuiz(Quiz $quiz, $userId = null, $participant = null)
-{
-    Log::info('QuizService startQuiz called', [
-        'quiz_id' => $quiz->id,
-        'user_id' => $userId,
-        'has_participant' => !is_null($participant)
-    ]);
+    public function startQuiz(Quiz $quiz, $userId = null, $participant = null)
+    {
+        Log::info('QuizService startQuiz called', [
+            'quiz_id' => $quiz->id,
+            'user_id' => $userId,
+            'has_participant' => !is_null($participant)
+        ]);
 
-    $startedAt = now();
-    
-    // Get participant ID
-    $participantId = null;
-    if ($participant) {
-        $participantId = $participant->id;
-    } elseif ($userId) {
-        $existingParticipant = QuizParticipant::where('quiz_id', $quiz->id)
-            ->where('user_id', $userId)
-            ->first();
-        
-        if ($existingParticipant) {
-            $participantId = $existingParticipant->id;
+        $startedAt = now();
+
+        $participantId = null;
+        if ($participant) {
+            $participantId = $participant->id;
+        } elseif ($userId) {
+            $existingParticipant = QuizParticipant::where('quiz_id', $quiz->id)
+                ->where('user_id', $userId)
+                ->first();
+
+            if ($existingParticipant) {
+                $participantId = $existingParticipant->id;
+            }
         }
+
+        $questions = $quiz->questions()
+            ->with('options')
+            ->orderBy('order')
+            ->get();
+
+        $orderedQuestions = $quiz->is_random_questions
+            ? $questions->shuffle()->values()
+            : $questions->values();
+
+        $questionSequence = $orderedQuestions->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+
+        $attempt = QuizAttempt::create([
+            'user_id' => $userId,
+            'participant_id' => $participantId,
+            'quiz_id' => $quiz->id,
+            'started_at' => $startedAt,
+            'status' => 'in_progress',
+            'total_questions' => count($questionSequence),
+            'total_points' => $questions->sum('points'),
+            'question_sequence' => $questionSequence,
+            'option_sequences' => $this->buildOptionSequences($quiz, $orderedQuestions),
+            'ip_address' => request()->ip()
+        ]);
+
+        Log::info('Quiz attempt created', [
+            'attempt_id' => $attempt->id,
+            'user_id' => $userId,
+            'participant_id' => $participantId,
+            'question_sequence' => $questionSequence
+        ]);
+
+        broadcast(new QuizStarted($quiz))->toOthers();
+
+        return $attempt;
     }
-    
-    // Create attempt
-    $attempt = QuizAttempt::create([
-        'user_id' => $userId,
-        'participant_id' => $participantId,
-        'quiz_id' => $quiz->id,
-        'started_at' => $startedAt,
-        'status' => 'in_progress',
-        'total_questions' => $quiz->questions()->count(),
-        'total_points' => $quiz->questions()->sum('points'),
-        'ip_address' => request()->ip()
-    ]);
-    
-    Log::info('Quiz attempt created', [
-        'attempt_id' => $attempt->id,
-        'user_id' => $userId,
-        'participant_id' => $participantId
-    ]);
-    
-    // Broadcast quiz started event
-    broadcast(new QuizStarted($quiz))->toOthers();
-    
-    return $attempt;
-}
     
     /**
      * Get the next unanswered question for the attempt
@@ -74,22 +86,23 @@ public function startQuiz(Quiz $quiz, $userId = null, $participant = null)
         $answeredQuestionIds = UserAnswer::where('quiz_attempt_id', $attempt->id)
             ->pluck('question_id')
             ->toArray();
-        
-        if ($quiz->is_random_questions) {
-            $nextQuestion = Question::where('quiz_id', $quiz->id)
-                ->whereNotIn('id', $answeredQuestionIds)
-                ->inRandomOrder()
-                ->first();
-        } else {
-            $nextQuestion = Question::where('quiz_id', $quiz->id)
-                ->whereNotIn('id', $answeredQuestionIds)
-                ->orderBy('order')
-                ->first();
-        }
-        
+
+        $questionSequence = collect(
+            $attempt->question_sequence ?: $quiz->questions()->orderBy('order')->pluck('id')->all()
+        );
+
+        $nextQuestionId = $questionSequence
+            ->first(fn ($questionId) => !in_array((int) $questionId, $answeredQuestionIds, true));
+
+        $nextQuestion = $nextQuestionId
+            ? Question::where('quiz_id', $quiz->id)->with('options')->find($nextQuestionId)
+            : null;
+
         if ($nextQuestion) {
             $questionNumber = count($answeredQuestionIds) + 1;
             $totalQuestions = $quiz->questions->count();
+
+            $this->applyAttemptOptionSequence($attempt, $nextQuestion);
             
             Log::info('Broadcasting next question', [
                 'attempt_id' => $attempt->id,
@@ -107,6 +120,29 @@ public function startQuiz(Quiz $quiz, $userId = null, $participant = null)
         }
         
         return $nextQuestion;
+    }
+
+    public function applyAttemptOptionSequence(QuizAttempt $attempt, ?Question $question): ?Question
+    {
+        if (!$question || !$question->relationLoaded('options')) {
+            return $question;
+        }
+
+        $sequence = data_get($attempt->option_sequences, $question->id);
+        if (!$sequence) {
+            return $question;
+        }
+
+        $orderedOptions = collect($sequence)
+            ->map(fn ($optionId) => $question->options->firstWhere('id', (int) $optionId))
+            ->filter()
+            ->values();
+
+        if ($orderedOptions->isNotEmpty()) {
+            $question->setRelation('options', $orderedOptions);
+        }
+
+        return $question;
     }
     
     /**
@@ -303,5 +339,25 @@ public function startQuiz(Quiz $quiz, $userId = null, $participant = null)
         
         $remaining = now()->diffInSeconds($quiz->ends_at, false);
         return $remaining > 0 ? $remaining : 0;
+    }
+
+    private function buildOptionSequences(Quiz $quiz, Collection $questions): array
+    {
+        $optionSequences = [];
+
+        foreach ($questions as $question) {
+            $options = $question->options->sortBy('order')->values();
+            if ($quiz->is_random_options || $question->is_randomized_options) {
+                $options = $options->shuffle()->values();
+            }
+
+            $optionSequences[$question->id] = $options
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all();
+        }
+
+        return $optionSequences;
     }
 }

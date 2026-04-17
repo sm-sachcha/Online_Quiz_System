@@ -300,6 +300,8 @@
                         <th>Participant</th>
                         <th>Email</th>
                         <th width="140">Status</th>
+                        <th>Running Question</th>
+                        <th width="150">Right / Wrong</th>
                         <th width="180">Joined At</th>
                         <th width="150">Last Active</th>
                         <th width="100">Actions</th>
@@ -319,6 +321,12 @@
                             $latestAttemptId = $participant['latest_attempt_id'] ?? null;
                             $avatarLetter = $participantName ? strtoupper(substr($participantName, 0, 1)) : '?';
                             $avatarClass = $isGuest ? 'avatar-guest' : '';
+                            $currentQuestionNumber = $participant['current_question_number'] ?? null;
+                            $currentQuestionText = $participant['current_question_text'] ?? null;
+                            $correctAnswers = $participant['correct_answers'] ?? 0;
+                            $incorrectAnswers = $participant['incorrect_answers'] ?? 0;
+                            $answeredCount = $participant['answered_count'] ?? 0;
+                            $totalQuestionsForAttempt = $participant['total_questions'] ?? 0;
                         @endphp
                         <tr class="participant-row" data-participant-id="{{ $participantId }}" data-status="{{ $participantStatus }}">
                             <td class="text-center">{{ $index + 1 }} </td>
@@ -365,6 +373,28 @@
                                     <span class="status-badge status-left">
                                         <i class="fas fa-clock"></i> Registered
                                     </span>
+                                @endif
+                            </td>
+                            <td>
+                                @if($participantStatus == 'taking_quiz' && $currentQuestionNumber && $currentQuestionText)
+                                    <div class="fw-semibold text-primary">Q{{ $currentQuestionNumber }}</div>
+                                    <div>{{ $currentQuestionText }}</div>
+                                @elseif($participantStatus == 'completed')
+                                    <span class="text-success fw-semibold">Quiz completed</span>
+                                    @if($totalQuestionsForAttempt)
+                                        <div class="small text-muted">{{ $answeredCount }}/{{ $totalQuestionsForAttempt }} answered</div>
+                                    @endif
+                                @elseif($participantStatus == 'joined')
+                                    <span class="text-muted">Waiting in lobby</span>
+                                @else
+                                    <span class="text-muted">No active question</span>
+                                @endif
+                            </td>
+                            <td>
+                                <div class="fw-semibold text-success">{{ $correctAnswers }} right</div>
+                                <div class="fw-semibold text-danger">{{ $incorrectAnswers }} wrong</div>
+                                @if($totalQuestionsForAttempt)
+                                    <small class="text-muted">{{ $answeredCount }}/{{ $totalQuestionsForAttempt }} answered</small>
                                 @endif
                             </td>
                             <td>
@@ -473,9 +503,27 @@
             const isGuest = !!participant.is_guest;
             const status = participant.effective_status || participant.status || 'left';
             const avatarClass = isGuest ? 'avatar-guest' : '';
+            const currentQuestionNumber = participant.current_question_number || null;
+            const currentQuestionText = participant.current_question_text || '';
+            const correctAnswers = participant.correct_answers || 0;
+            const incorrectAnswers = participant.incorrect_answers || 0;
+            const answeredCount = participant.answered_count || 0;
+            const totalQuestions = participant.total_questions || 0;
             const latestAttemptButton = participant.latest_attempt_id
                 ? `<a href="/user/quiz/result/${quizId}/${participant.latest_attempt_id}" class="btn btn-sm btn-primary" title="View Result" target="_blank"><i class="fas fa-chart-line"></i></a>`
                 : '';
+            const runningQuestionHtml = status === 'taking_quiz' && currentQuestionNumber && currentQuestionText
+                ? `<div class="fw-semibold text-primary">Q${escapeHtml(String(currentQuestionNumber))}</div><div>${escapeHtml(currentQuestionText)}</div>`
+                : (status === 'completed'
+                    ? `<span class="text-success fw-semibold">Quiz completed</span>${totalQuestions ? `<div class="small text-muted">${answeredCount}/${totalQuestions} answered</div>` : ''}`
+                    : (status === 'joined'
+                        ? '<span class="text-muted">Waiting in lobby</span>'
+                        : '<span class="text-muted">No active question</span>'));
+            const answerStatsHtml = `
+                <div class="fw-semibold text-success">${escapeHtml(String(correctAnswers))} right</div>
+                <div class="fw-semibold text-danger">${escapeHtml(String(incorrectAnswers))} wrong</div>
+                ${totalQuestions ? `<small class="text-muted">${answeredCount}/${totalQuestions} answered</small>` : ''}
+            `;
 
             return `
                 <tr class="participant-row" data-participant-id="${participant.id}" data-status="${escapeHtml(status)}">
@@ -492,6 +540,8 @@
                     </td>
                     <td><i class="fas ${isGuest ? 'fa-user-friends' : 'fa-envelope'} text-muted me-1"></i>${escapeHtml(isGuest ? 'N/A' : (participant.email || 'N/A'))}</td>
                     <td>${statusBadge(status)}</td>
+                    <td>${runningQuestionHtml}</td>
+                    <td>${answerStatsHtml}</td>
                     <td>${formatDate(participant.joined_at)}<br><small class="text-muted">${formatRelative(participant.joined_at)}</small></td>
                     <td><i class="fas fa-clock text-muted me-1"></i><span class="last-active-time">${formatRelative(participant.updated_at)}</span></td>
                     <td><div class="btn-group" role="group">${latestAttemptButton}</div></td>

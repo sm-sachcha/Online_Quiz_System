@@ -139,6 +139,10 @@
                                 <td>{{ $quiz->is_random_questions ? 'Yes' : 'No' }}</td>
                              </tr>
                             <tr>
+                                <th>Random Options:</th>
+                                <td>{{ $quiz->is_random_options ? 'Yes' : 'No' }}</td>
+                             </tr>
+                            <tr>
                                 <th>Status:</th>
                                 <td>
                                     @php

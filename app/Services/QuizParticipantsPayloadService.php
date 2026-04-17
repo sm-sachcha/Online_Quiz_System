@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Quiz;
 use App\Models\QuizAttempt;
 use App\Models\QuizParticipant;
+use App\Models\Question;
 
 class QuizParticipantsPayloadService
 {
@@ -22,10 +23,14 @@ class QuizParticipantsPayloadService
             return null;
         };
 
-        $attempts = QuizAttempt::where('quiz_id', $quiz->id)
+        $attempts = QuizAttempt::with('answers')
+            ->where('quiz_id', $quiz->id)
             ->whereIn('status', ['in_progress', 'completed'])
             ->orderByDesc('created_at')
             ->get();
+
+        $questionTexts = Question::where('quiz_id', $quiz->id)
+            ->pluck('question_text', 'id');
 
         $inProgressKeys = $attempts
             ->where('status', 'in_progress')
@@ -41,18 +46,30 @@ class QuizParticipantsPayloadService
             ->unique()
             ->values();
 
+        $latestInProgressByKey = $attempts
+            ->where('status', 'in_progress')
+            ->groupBy(fn ($attempt) => $participantKey($attempt->user_id, $attempt->participant_id))
+            ->map(fn ($group) => $group->first());
+
         $latestCompletedByKey = $attempts
             ->where('status', 'completed')
-            ->mapWithKeys(function ($attempt) use ($participantKey) {
-                return [$participantKey($attempt->user_id, $attempt->participant_id) => $attempt];
-            });
+            ->groupBy(fn ($attempt) => $participantKey($attempt->user_id, $attempt->participant_id))
+            ->map(fn ($group) => $group->first());
 
         $participants = QuizParticipant::with('user')
             ->where('quiz_id', $quiz->id)
             ->orderByRaw("FIELD(status, 'joined', 'taking_quiz', 'completed', 'left')")
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(function ($participant) use ($participantKey, $inProgressKeys, $completedKeys, $latestCompletedByKey) {
+            ->map(function ($participant) use (
+                $participantKey,
+                $inProgressKeys,
+                $completedKeys,
+                $latestInProgressByKey,
+                $latestCompletedByKey,
+                $quiz,
+                $questionTexts,
+            ) {
                 $key = $participantKey($participant->user_id, $participant->id);
                 $effectiveStatus = $participant->status;
 
@@ -62,7 +79,15 @@ class QuizParticipantsPayloadService
                     $effectiveStatus = 'completed';
                 }
 
-                $latestAttempt = $key ? $latestCompletedByKey->get($key) : null;
+                $latestInProgressAttempt = $key ? $latestInProgressByKey->get($key) : null;
+                $latestCompletedAttempt = $key ? $latestCompletedByKey->get($key) : null;
+                $latestAttempt = $latestInProgressAttempt ?: $latestCompletedAttempt;
+
+                $currentQuestion = $this->resolveCurrentQuestionDetails(
+                    $latestInProgressAttempt,
+                    $quiz,
+                    $questionTexts->all()
+                );
 
                 return [
                     'id' => $participant->id,
@@ -75,8 +100,42 @@ class QuizParticipantsPayloadService
                     'effective_status' => $effectiveStatus,
                     'joined_at' => optional($participant->joined_at)->toIso8601String(),
                     'updated_at' => optional($participant->updated_at)->toIso8601String(),
-                    'latest_attempt_id' => $latestAttempt?->id,
+                    'latest_attempt_id' => $latestCompletedAttempt?->id,
+                    'active_attempt_id' => $latestInProgressAttempt?->id,
+                    'correct_answers' => $latestAttempt?->correct_answers ?? 0,
+                    'incorrect_answers' => $latestAttempt?->incorrect_answers ?? 0,
+                    'answered_count' => $latestAttempt?->answers?->count() ?? 0,
+                    'total_questions' => $latestAttempt?->total_questions ?? 0,
+                    'current_question_number' => $currentQuestion['number'],
+                    'current_question_text' => $currentQuestion['text'],
                 ];
+            })
+            ->sort(function (array $left, array $right) {
+                $statusRank = fn (string $status) => match ($status) {
+                    'taking_quiz' => 0,
+                    'joined' => 1,
+                    'completed' => 2,
+                    'left' => 3,
+                    default => 4,
+                };
+
+                $leftStatusRank = $statusRank((string) ($left['effective_status'] ?? ''));
+                $rightStatusRank = $statusRank((string) ($right['effective_status'] ?? ''));
+
+                if ($leftStatusRank !== $rightStatusRank) {
+                    return $leftStatusRank <=> $rightStatusRank;
+                }
+
+                if (($left['effective_status'] ?? null) === 'taking_quiz' && ($right['effective_status'] ?? null) === 'taking_quiz') {
+                    $leftQuestion = (int) ($left['current_question_number'] ?? 0);
+                    $rightQuestion = (int) ($right['current_question_number'] ?? 0);
+
+                    if ($leftQuestion !== $rightQuestion) {
+                        return $rightQuestion <=> $leftQuestion;
+                    }
+                }
+
+                return strcmp((string) ($right['updated_at'] ?? ''), (string) ($left['updated_at'] ?? ''));
             })
             ->values();
 
@@ -99,6 +158,36 @@ class QuizParticipantsPayloadService
             'leftParticipants' => $leftParticipants,
             'isQuizStarted' => $quiz->is_published && $quiz->scheduled_at && $quiz->scheduled_at <= now(),
             'hasQuestions' => $quiz->questions()->count() > 0,
+        ];
+    }
+
+    private function resolveCurrentQuestionDetails(?QuizAttempt $attempt, Quiz $quiz, array $questionTexts): array
+    {
+        if (!$attempt || $attempt->status !== 'in_progress') {
+            return ['number' => null, 'text' => null];
+        }
+
+        $sequence = collect(
+            $attempt->question_sequence ?: $quiz->questions()->orderBy('order')->pluck('id')->all()
+        )->map(fn ($id) => (int) $id)->values();
+
+        $answeredQuestionIds = $attempt->answers
+            ->pluck('question_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $currentQuestionId = $sequence
+            ->first(fn ($questionId) => !in_array((int) $questionId, $answeredQuestionIds, true));
+
+        if (!$currentQuestionId) {
+            return ['number' => null, 'text' => null];
+        }
+
+        $index = $sequence->search((int) $currentQuestionId);
+
+        return [
+            'number' => $index === false ? null : ((int) $index + 1),
+            'text' => $questionTexts[$currentQuestionId] ?? null,
         ];
     }
 }
