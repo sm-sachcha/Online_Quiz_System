@@ -224,7 +224,8 @@ class ResultController extends Controller
 
         $attempts = $query->orderByDesc('score')->get();
 
-        $filename = 'Best-Results-' . now()->format('Y-m-d') . '.csv';
+        $quiz = $attempts->first()?->quiz ?? Quiz::find($request->quiz_id) ?? new Quiz(['title' => 'Results']);
+        $filename = "{$quiz->title} (" . now()->format('d-m-Y') . ")" . '.csv';
 
         $headers = [
             'Content-Type'        => 'text/csv',
@@ -239,7 +240,7 @@ class ResultController extends Controller
             fprintf($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
             fputcsv($file, [
-                'Date',
+                // 'Date',
                 'Participant Name',
                 'Obtained Marks',
                 'Total Marks',
@@ -248,7 +249,7 @@ class ResultController extends Controller
                 'Incorrect Answers',
                 'Total Questions',
                 'Status',
-                'Attempts',
+                // 'Attempts',
                 'Rank',
             ]);
 
@@ -272,7 +273,7 @@ class ResultController extends Controller
                 $status = ($attempt->result && $attempt->result->passed) ? 'Passed' : 'Failed';
 
                 fputcsv($file, [
-                    $attempt->created_at ? $attempt->created_at->format('Y-m-d H:i:s') : 'N/A',
+                    // $attempt->created_at ? $attempt->created_at->format('Y-m-d H:i:s') : 'N/A',
                     $userName,
                     $attempt->score,
                     $attempt->quiz->total_points,
@@ -281,7 +282,7 @@ class ResultController extends Controller
                     $attempt->incorrect_answers,
                     $attempt->total_questions,
                     $status,
-                    $attemptCounts->get($attempt->id, 1),
+                    // $attemptCounts->get($attempt->id, 1),
                     $rank ?? 'N/A',
                 ]);
             }
