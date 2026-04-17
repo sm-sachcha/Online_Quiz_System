@@ -51,13 +51,13 @@
                                 <tr>
                                     <th>ID</th>
                                     <th>Title</th>
-                                    <th>Category</th>
+                                    <!-- <th>Category</th> -->
                                     <th>Questions</th>
                                     <th>Total Time</th>
                                     <th>Points</th>
                                     <th>Status</th>
                                     <th>Share Link</th>
-                                    <th>Actions</th>
+                                    <th class="text-center">Actions</th>
                                  </thead>
                             <tbody>
                                 @foreach($quizzes as $quiz)
@@ -68,7 +68,7 @@
                                             <br>
                                             <small class="text-muted">Attempts: {{ $quiz->attempts_count }}</small>
                                         </td>
-                                        <td>
+                                        <!-- <td>
                                             @if($quiz->category)
                                                 <span class="badge" style="background-color: {{ $quiz->category->color ?? '#6c757d' }}">
                                                     <i class="{{ $quiz->category->icon ?? 'fas fa-tag' }}"></i>
@@ -79,7 +79,7 @@
                                                     <i class="fas fa-folder-open"></i> No Category
                                                 </span>
                                             @endif
-                                        </td>
+                                        </td> -->
                                         <td>
                                             <span class="badge bg-info">{{ $quiz->questions_count }} questions</span>
                                         </td>
@@ -114,50 +114,59 @@
                                             </div>
                                         </td>
                                         <td>
-                                            <div class="btn-group" role="group">
+                                            <div class="d-flex align-items-center gap-1 overflow-auto">
+
                                                 <a href="{{ route('admin.quizzes.show', $quiz) }}" 
-                                                   class="btn btn-sm btn-info" title="View">
+                                                class="btn btn-sm btn-outline-info" title="View">
                                                     <i class="fas fa-eye"></i>
                                                 </a>
+
                                                 <a href="{{ route('admin.quizzes.edit', $quiz) }}" 
-                                                   class="btn btn-sm btn-primary" title="Edit">
+                                                class="btn btn-sm btn-outline-primary" title="Edit">
                                                     <i class="fas fa-edit"></i>
                                                 </a>
+
                                                 <a href="{{ route('admin.quizzes.questions.index', $quiz) }}" 
-                                                   class="btn btn-sm btn-secondary" title="Manage Questions">
+                                                class="btn btn-sm btn-outline-secondary" title="Questions">
                                                     <i class="fas fa-question-circle"></i>
                                                 </a>
+
                                                 <a href="{{ route('admin.quizzes.participants', $quiz) }}" 
-                                                   class="btn btn-sm btn-success" title="View Participants">
+                                                class="btn btn-sm btn-outline-success" title="Participants">
                                                     <i class="fas fa-users"></i>
                                                 </a>
-                                                <form action="{{ route('admin.quizzes.duplicate', $quiz) }}" 
-                                                      method="POST" class="d-inline">
+
+                                                <form action="{{ route('admin.quizzes.duplicate', $quiz) }}" method="POST">
                                                     @csrf
-                                                    <button type="submit" class="btn btn-sm btn-warning" title="Duplicate">
+                                                    <button type="submit" class="btn btn-sm btn-outline-warning" title="Duplicate">
                                                         <i class="fas fa-copy"></i>
                                                     </button>
                                                 </form>
-                                                <form action="{{ route('admin.quizzes.toggle-publish', $quiz) }}" 
-                                                      method="POST" class="d-inline">
+
+                                                <form action="{{ route('admin.quizzes.toggle-publish', $quiz) }}" method="POST">
                                                     @csrf
-                                                    <button type="submit" class="btn btn-sm {{ $quiz->is_published ? 'btn-warning' : 'btn-success' }}" 
-                                                            title="{{ $quiz->is_published ? 'Hide Quiz' : 'Publish Quiz' }}">
-                                                        <i class="fas {{ $quiz->is_published ? 'fa-eye-slash' : 'fa-eye' }}"></i>
+                                                    <button type="submit" 
+                                                            class="btn btn-sm {{ $quiz->is_published ? 'btn-success' : 'btn-outline-success' }}" 
+                                                            title="{{ $quiz->is_published ? 'Unpublish Quiz' : 'Publish Quiz' }}">
+                                                        
+                                                        <i class="fas {{ $quiz->is_published ? 'fa-unlock' : 'fa-lock' }}"></i>
+                                                        
                                                     </button>
                                                 </form>
+
                                                 <form action="{{ route('admin.quizzes.destroy', $quiz) }}" 
-                                                      method="POST" class="d-inline delete-quiz-form">
+                                                    method="POST" class="delete-quiz-form">
                                                     @csrf
                                                     @method('DELETE')
                                                     <button type="button" 
-                                                            class="btn btn-sm btn-danger delete-quiz-btn" 
+                                                            class="btn btn-sm btn-outline-danger delete-quiz-btn" 
                                                             data-quiz-title="{{ $quiz->title }}"
                                                             data-quiz-id="{{ $quiz->id }}"
                                                             title="Delete">
                                                         <i class="fas fa-trash"></i>
                                                     </button>
                                                 </form>
+
                                             </div>
                                         </td>
                                     </tr>

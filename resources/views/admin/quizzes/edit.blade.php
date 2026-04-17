@@ -89,10 +89,10 @@
 
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label for="category_id" class="form-label">Category <span class="text-muted">(Optional)</span></label>
+                            <label for="category_id" class="form-label">Quiz Type <span class="text-muted"></span></label>
                             <select class="form-select @error('category_id') is-invalid @enderror" 
                                     id="category_id" name="category_id">
-                                <option value="">-- No Category --</option>
+                                <option value=""> --> For all user <--</option>
                                 @foreach($categories as $category)
                                     <option value="{{ $category->id }}" {{ old('category_id', $quiz->category_id) == $category->id ? 'selected' : '' }}>
                                         {{ $category->name }}
