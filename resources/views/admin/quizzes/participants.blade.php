@@ -303,7 +303,7 @@
                         <th>Running Question</th>
                         <th width="150">Right / Wrong</th>
                         <th width="180">Joined At</th>
-                        <th width="150">Last Active</th>
+                        <!-- <th width="150">Last Active</th> -->
                         <th width="100">Actions</th>
                     </tr>
                 </thead>
@@ -380,7 +380,7 @@
                                     <div class="fw-semibold text-primary">Q{{ $currentQuestionNumber }}</div>
                                     <div>{{ $currentQuestionText }}</div>
                                 @elseif($participantStatus == 'completed')
-                                    <span class="text-success fw-semibold">Quiz completed</span>
+                                    <span class="text-success fw-semibold">All questions answered</span>
                                     @if($totalQuestionsForAttempt)
                                         <div class="small text-muted">{{ $answeredCount }}/{{ $totalQuestionsForAttempt }} answered</div>
                                     @endif
@@ -543,7 +543,7 @@
                     <td>${runningQuestionHtml}</td>
                     <td>${answerStatsHtml}</td>
                     <td>${formatDate(participant.joined_at)}<br><small class="text-muted">${formatRelative(participant.joined_at)}</small></td>
-                    <td><i class="fas fa-clock text-muted me-1"></i><span class="last-active-time">${formatRelative(participant.updated_at)}</span></td>
+                    <!-- <td><i class="fas fa-clock text-muted me-1"></i><span class="last-active-time">${formatRelative(participant.updated_at)}</span></td> -->
                     <td><div class="btn-group" role="group">${latestAttemptButton}</div></td>
                 </tr>
             `;

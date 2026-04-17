@@ -27,7 +27,7 @@
 
 <!-- Stats Cards -->
 <div class="row mb-4">
-    <div class="col-md-3">
+    <!-- <div class="col-md-3">
         <div class="card text-white bg-primary stat-card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
@@ -39,9 +39,9 @@
                 </div>
             </div>
         </div>
-    </div>
+    </div> -->
     
-    <div class="col-md-3">
+    <div class="col-md-6">
         <div class="card text-white bg-success stat-card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
@@ -55,7 +55,7 @@
         </div>
     </div>
     
-    <div class="col-md-3">
+    <!-- <div class="col-md-3">
         <div class="card text-white bg-info stat-card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
@@ -67,10 +67,10 @@
                 </div>
             </div>
         </div>
-    </div>
+    </div> -->
     
-    <div class="col-md-3">
-        <div class="card text-white bg-warning stat-card">
+    <div class="col-md-6">
+        <div class="card text-white bg-secondary stat-card">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
@@ -155,45 +155,8 @@
         </div>
     </div>
 
-    <!-- Recent Users -->
-    <div class="col-md-6">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0"><i class="fas fa-users"></i> Recent Users</h5>
-            </div>
-            <div class="card-body p-0">
-                @if($recentUsers->count() > 0)
-                    <div class="list-group list-group-flush">
-                        @foreach($recentUsers as $user)
-                            <div class="list-group-item">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <h6 class="mb-1">{{ $user->name }}</h6>
-                                        <small class="text-muted">
-                                            <i class="fas fa-envelope"></i> {{ $user->email }} |
-                                            <i class="fas fa-calendar"></i> {{ $user->created_at->diffForHumans() }}
-                                        </small>
-                                    </div>
-                                    <span class="badge {{ $user->is_active ? 'bg-success' : 'bg-danger' }}">
-                                        {{ $user->is_active ? 'Active' : 'Inactive' }}
-                                    </span>
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-                @else
-                    <div class="text-center py-4">
-                        <i class="fas fa-user-slash fa-3x text-muted mb-3"></i>
-                        <p class="text-muted">No users registered yet.</p>
-                    </div>
-                @endif
-            </div>
-        </div>
-    </div>
-</div>
 
-<div class="row">
-    <!-- Top Quizzes -->
+        <!-- Top Quizzes -->
     <div class="col-md-6">
         <div class="card">
             <div class="card-header">
@@ -228,8 +191,46 @@
         </div>
     </div>
 
+    <!-- Recent Users -->
+    <!-- <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-users"></i> Recent Users</h5>
+            </div>
+            <div class="card-body p-0">
+                @if($recentUsers->count() > 0)
+                    <div class="list-group list-group-flush">
+                        @foreach($recentUsers as $user)
+                            <div class="list-group-item">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <h6 class="mb-1">{{ $user->name }}</h6>
+                                        <small class="text-muted">
+                                            <i class="fas fa-envelope"></i> {{ $user->email }} |
+                                            <i class="fas fa-calendar"></i> {{ $user->created_at->diffForHumans() }}
+                                        </small>
+                                    </div>
+                                    <span class="badge {{ $user->is_active ? 'bg-success' : 'bg-danger' }}">
+                                        {{ $user->is_active ? 'Active' : 'Inactive' }}
+                                    </span>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @else
+                    <div class="text-center py-4">
+                        <i class="fas fa-user-slash fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">No users registered yet.</p>
+                    </div>
+                @endif
+            </div>
+        </div>
+    </div>
+</div> -->
+
+<div class="row">
     <!-- Activity Chart -->
-    <div class="col-md-6">
+    <div class="col-md-12">
         <div class="card">
             <div class="card-header">
                 <h5 class="mb-0"><i class="fas fa-chart-line"></i> User Activity (Last 7 Days)</h5>

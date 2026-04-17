@@ -529,11 +529,11 @@
                         <div class="timeline-title">Completed</div>
                         <div class="text-muted small">{{ $attempt->ended_at->format('h:i A') }}</div>
                     </div>
-                    <div class="timeline-item">
+                    <!-- <div class="timeline-item">
                         <div class="timeline-date">Duration</div>
                         <div class="timeline-title">Time Taken</div>
-                        <div class="text-muted small">{{ gmdate("i:s", $timeTaken) }} minutes</div>
-                    </div>
+                        <div class="text-muted small">{{ gmdate("H:i:s", $timeTaken) }}</div>
+                    </div> -->
                 </div>
             </div>
         </div>
@@ -542,7 +542,7 @@
 
 <!-- Statistics Row -->
 <div class="row g-4 mt-2">
-    <div class="col-md-6 animate-fadeInUp" style="animation-delay: 0.4s">
+    <div class="col-md-12 animate-fadeInUp" style="animation-delay: 0.4s">
         <div class="card result-card">
             <div class="card-header bg-secondary text-white">
                 <h5 class="mb-0"><i class="fas fa-chart-pie me-2"></i>Performance Summary</h5>
@@ -575,7 +575,7 @@
         </div>
     </div>
     
-    <div class="col-md-6 animate-fadeInUp" style="animation-delay: 0.5s">
+    <!-- <div class="col-md-6 animate-fadeInUp" style="animation-delay: 0.5s">
         <div class="card result-card">
             <div class="card-header bg-secondary text-white">
                 <h5 class="mb-0"><i class="fas fa-clock me-2"></i>Time Analysis</h5>
@@ -608,7 +608,7 @@
                 </div>
             </div>
         </div>
-    </div>
+    </div> -->
 </div>
 
 <!-- Question-wise Analysis -->

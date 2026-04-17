@@ -36,6 +36,10 @@
         background-color: #f8f9fa;
         border-left: 4px solid #17a2b8;
     }
+    .checkbox-green:checked {
+    background-color: #28a745;
+    border-color: #28a745;
+    }
 </style>
 
 <div class="row">
@@ -71,7 +75,7 @@
                             <label for="category_id" class="form-label">Category <span class="text-muted">(Optional)</span></label>
                             <select class="form-select @error('category_id') is-invalid @enderror" 
                                     id="category_id" name="category_id">
-                                <option value="">-- No Category --</option>
+                                <option value="">-- Instant Quiz --</option>
                                 @foreach($categories as $category)
                                     <option value="{{ $category->id }}" {{ old('category_id') == $category->id ? 'selected' : '' }}>
                                         {{ $category->name }}
@@ -150,45 +154,39 @@
                         </div>
                     </div>
 
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input type="checkbox" class="form-check-input" id="is_random_questions" 
-                                       name="is_random_questions" value="1" 
-                                       {{ old('is_random_questions') ? 'checked' : '' }}>
-                                <label class="form-check-label" for="is_random_questions">
-                                    Randomize Question Order
-                                </label>
-                            </div>
-                        </div>
+                <div class="d-flex flex-wrap align-items-start gap-4 mb-3">
 
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input type="checkbox" class="form-check-input" id="is_random_options"
-                                       name="is_random_options" value="1"
-                                       {{ old('is_random_options') ? 'checked' : '' }}>
-                                <label class="form-check-label" for="is_random_options">
-                                    Randomize Option Order
-                                </label>
-                            </div>
-                        </div>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input checkbox-green"  id="is_random_questions" 
+                            name="is_random_questions" value="1" 
+                            {{ old('is_random_questions') ? 'checked' : '' }}>
+                        <label class="form-check-label" for="is_random_questions">
+                            Randomize Questions
+                        </label>
                     </div>
 
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input type="checkbox" class="form-check-input" id="is_published" 
-                                       name="is_published" value="1" 
-                                       {{ old('is_published') ? 'checked' : '' }}>
-                                <label class="form-check-label" for="is_published">
-                                    Publish Immediately
-                                </label>
-                                <div class="form-text text-muted">
-                                    If unchecked, you can publish later from the edit page
-                                </div>
-                            </div>
-                        </div>
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input checkbox-green"  id="is_random_options"
+                            name="is_random_options" value="1"
+                            {{ old('is_random_options') ? 'checked' : '' }}>
+                        <label class="form-check-label" for="is_random_options">
+                            Randomize Options
+                        </label>
                     </div>
+
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input checkbox-green" id="is_published" 
+                            name="is_published" value="1" 
+                            {{ old('is_published') ? 'checked' : '' }}>
+                        <label class="form-check-label" for="is_published">
+                            Publish Now
+                        </label>
+                        <!-- <div class="form-text text-muted">
+                            If unchecked, you can publish later from the edit page
+                        </div> -->
+                    </div>
+
+                </div>
 
                     <div class="alert alert-info">
                         <i class="fas fa-info-circle"></i> 

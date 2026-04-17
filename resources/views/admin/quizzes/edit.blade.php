@@ -44,6 +44,10 @@
         transform: translateY(-2px);
         box-shadow: 0 5px 15px rgba(40,167,69,0.3);
     }
+    .checkbox-green:checked {
+    background-color: #28a745;
+    border-color: #28a745;
+    }
 </style>
 
 <div class="row">
@@ -54,9 +58,9 @@
                 @if(!$quiz->is_published || ($quiz->scheduled_at && $quiz->scheduled_at > now()))
                     <form action="{{ route('admin.quizzes.start', $quiz) }}" method="POST" class="d-inline">
                         @csrf
-                        <button type="submit" class="btn btn-success btn-sm start-quiz-btn" onclick="return confirm('Start this quiz now? Participants will be able to take it immediately.')">
+                        <!-- <button type="submit" class="btn btn-success btn-sm start-quiz-btn" onclick="return confirm('Start this quiz now? Participants will be able to take it immediately.')">
                             <i class="fas fa-play"></i> Start Quiz Now
-                        </button>
+                        </button> -->
                     </form>
                 @endif
             </div>
@@ -169,41 +173,37 @@
                         </div>
                     </div>
 
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input type="checkbox" class="form-check-input" id="is_random_questions" 
-                                       name="is_random_questions" value="1" 
-                                       {{ old('is_random_questions', $quiz->is_random_questions) ? 'checked' : '' }}>
-                                <label class="form-check-label" for="is_random_questions">
-                                    Randomize Question Order
-                                </label>
-                            </div>
-                        </div>
+<div class="d-flex gap-4 mb-3">
+    <div class="form-check">
+        <input type="checkbox" class="form-check-input checkbox-green" id="is_random_questions" 
+               name="is_random_questions" value="1" 
+               {{ old('is_random_questions', $quiz->is_random_questions) ? 'checked' : '' }}>
+        <label class="form-check-label" for="is_random_questions">
+            Randomize Questions
+        </label>
+    </div>
 
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input type="checkbox" class="form-check-input" id="is_random_options"
-                                       name="is_random_options" value="1"
-                                       {{ old('is_random_options', $quiz->is_random_options) ? 'checked' : '' }}>
-                                <label class="form-check-label" for="is_random_options">
-                                    Randomize Option Order
-                                </label>
-                            </div>
-                        </div>
-                    </div>
+    <div class="form-check">
+        <input type="checkbox" class="form-check-input checkbox-green" id="is_random_options"
+               name="is_random_options" value="1"
+               {{ old('is_random_options', $quiz->is_random_options) ? 'checked' : '' }}>
+        <label class="form-check-label" for="is_random_options">
+            Randomize Options
+        </label>
+    </div>
+
+    <div class="form-check">
+        <input type="checkbox" class="form-check-input checkbox-green" id="is_published" 
+               name="is_published" value="1" 
+               {{ old('is_published', $quiz->is_published) ? 'checked' : '' }}>
+        <label class="form-check-label" for="is_published">
+            Publish Quiz
+        </label>
+    </div>
+</div>
 
                     <div class="row mb-3">
-                        <div class="col-md-6">
-                            <div class="form-check">
-                                <input type="checkbox" class="form-check-input" id="is_published" 
-                                       name="is_published" value="1" 
-                                       {{ old('is_published', $quiz->is_published) ? 'checked' : '' }}>
-                                <label class="form-check-label" for="is_published">
-                                    Publish Quiz
-                                </label>
-                            </div>
-                        </div>
+                        
                     </div>
 
                     <div class="alert alert-warning">

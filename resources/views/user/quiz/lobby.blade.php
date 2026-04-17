@@ -320,12 +320,12 @@
                     <div class="col-md-6">
                         <h6><i class="fas fa-info-circle text-primary"></i> Quiz Details</h6>
                         <ul class="list-unstyled">
-                            <li><i class="fas fa-tag text-primary"></i> Category: <strong>{{ $quiz->category->name ?? 'Uncategorized' }}</strong></li>
-                            <li><i class="far fa-clock text-primary"></i> Duration: <strong>{{ $quiz->duration_minutes }} minutes</strong></li>
+                            <!-- <li><i class="fas fa-tag text-primary"></i> Category: <strong>{{ $quiz->category->name ?? 'Uncategorized' }}</strong></li>
+                            <li><i class="far fa-clock text-primary"></i> Duration: <strong>{{ $quiz->duration_minutes }} minutes</strong></li> -->
                             <li><i class="fas fa-question-circle text-primary"></i> Questions: <strong>{{ $quiz->total_questions }}</strong></li>
                             <li><i class="fas fa-star text-primary"></i> Total Points: <strong>{{ $quiz->total_points }}</strong></li>
                             <li><i class="fas fa-check-circle text-primary"></i> Passing Score: <strong>{{ $quiz->passing_score }}%</strong></li>
-                            <li><i class="fas fa-redo text-primary"></i> Max Attempts: <strong>{{ $quiz->max_attempts }}</strong></li>
+                            <!-- <li><i class="fas fa-redo text-primary"></i> Max Attempts: <strong>{{ $quiz->max_attempts }}</strong></li> -->
                         </ul>
                     </div>
                     
@@ -333,8 +333,8 @@
                         <h6><i class="fas fa-gavel text-warning"></i> Rules</h6>
                         <ul class="list-unstyled">
                             <li><i class="fas fa-clock text-warning"></i> Time limit per question</li>
-                            <li><i class="fas fa-ban text-warning"></i> No tab switching during quiz</li>
-                            <li><i class="fas fa-trophy text-warning"></i> Points awarded for correct answers</li>
+                            <!-- <li><i class="fas fa-ban text-warning"></i> No tab switching during quiz</li>
+                            <li><i class="fas fa-trophy text-warning"></i> Points awarded for correct answers</li> -->
                             @if($quiz->is_random_questions)
                                 <li><i class="fas fa-random text-warning"></i> Questions are randomized</li>
                             @endif

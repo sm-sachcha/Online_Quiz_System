@@ -1,6 +1,9 @@
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
+
+<!-- Categories and User are hidden -->
+
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
@@ -125,11 +128,11 @@
                 @endif
                 
                 <!-- Categories - Available to both Admin and Master Admin -->
-                <li class="{{ request()->routeIs('admin.categories.*') ? 'active' : '' }}">
+                <!-- <li class="{{ request()->routeIs('admin.categories.*') ? 'active' : '' }}">
                     <a href="{{ route('admin.categories.index') }}">
                         <i class="fas fa-tags"></i> Categories
                     </a>
-                </li>
+                </li> -->
                 
                 <!-- Quizzes - Available to both Admin and Master Admin -->
                 <li class="{{ request()->routeIs('admin.quizzes.*') ? 'active' : '' }}">
@@ -146,11 +149,11 @@
                 </li>
                 
                 <!-- Users - Available to both Admin and Master Admin -->
-                <li class="{{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
+                <!-- <li class="{{ request()->routeIs('admin.users.*') ? 'active' : '' }}">
                     <a href="{{ route('admin.users.index') }}">
                         <i class="fas fa-users"></i> Users
                     </a>
-                </li>
+                </li> -->
                 
                 <!-- Reports - Available to both Admin and Master Admin -->
                 <li>
