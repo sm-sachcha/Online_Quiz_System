@@ -324,10 +324,14 @@ class QuizAttemptController extends Controller
             return $this->completeQuiz($quiz, $attempt);
         }
         
-        return view('user.quiz.session', array_merge(
-            compact('quiz', 'attempt'),
-            $nextQuestionData
-        ));
+        return response()
+            ->view('user.quiz.session', array_merge(
+                compact('quiz', 'attempt'),
+                $nextQuestionData
+            ))
+            ->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
     }
 
     private function checkTimeExpiry(Quiz $quiz, QuizAttempt $attempt)

@@ -441,6 +441,9 @@
     const resultAttemptId = {{ $attempt->id }};
     const resultAttemptUserId = {{ $attempt->user_id ?? 'null' }};
     const resultAttemptParticipantId = {{ $attempt->participant_id ?? 'null' }};
+    if (window.history && typeof window.history.replaceState === 'function') {
+        window.history.replaceState({ page: 'quiz-result', attemptId: resultAttemptId }, '', window.location.href);
+    }
     sessionStorage.removeItem('joined_quiz_' + resultQuizId);
     sessionStorage.removeItem('guest_name_' + resultQuizId);
     sessionStorage.removeItem('participant_id_' + resultQuizId);

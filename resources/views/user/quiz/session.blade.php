@@ -290,6 +290,12 @@
     let nextQuestionFallbackTimeout = null;
     const csrfToken = '{{ csrf_token() }}';
 
+    function redirectToResult(url = `/user/quiz/result/${quizId}/${attemptId}`) {
+        stopAttemptHeartbeat();
+        isInternalNavigation = true;
+        window.location.replace(url);
+    }
+
     function isMultipleChoiceQuestion() {
         return currentQuestionType === 'multiple_choice';
     }
@@ -341,8 +347,7 @@
                 updateUI(data);
             } else if (data.redirect_url) {
                 // Attempt already completed, redirect to results
-                isInternalNavigation = true;
-                window.location.href = data.redirect_url;
+                redirectToResult(data.redirect_url);
             } else {
                 answerSubmitted = false;
                 alert('Error: ' + (data.error || 'Unknown error'));
@@ -741,14 +746,13 @@
         }
 
         nextQuestionFallbackTimeout = setTimeout(() => {
-            stopAttemptHeartbeat();
-            isInternalNavigation = true;
-
             if (data.is_completed) {
-                window.location.href = `/user/quiz/result/${quizId}/${attemptId}`;
+                redirectToResult();
                 return;
             }
 
+            stopAttemptHeartbeat();
+            isInternalNavigation = true;
             window.location.href = `/user/quiz/attempt/${quizId}/${attemptId}`;
         }, 2500);
     }
@@ -764,6 +768,12 @@
 
     window.addEventListener('pagehide', function() {
         notifyAttemptLeave();
+    });
+
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted) {
+            window.location.reload();
+        }
     });
 
     // Anti-cheat
@@ -801,9 +811,7 @@
                     showNotification('The quiz was ended by the admin.', 'warning');
 
                     setTimeout(() => {
-                        stopAttemptHeartbeat();
-                        isInternalNavigation = true;
-                        window.location.href = `/user/quiz/result/${quizId}/${attemptId}`;
+                        redirectToResult();
                     }, 1200);
                 }
             });
@@ -840,9 +848,7 @@
                     );
 
                     setTimeout(() => {
-                        stopAttemptHeartbeat();
-                        isInternalNavigation = true;
-                        window.location.href = payload.redirect_url;
+                        redirectToResult(payload.redirect_url);
                     }, 1200);
                 }
             });
