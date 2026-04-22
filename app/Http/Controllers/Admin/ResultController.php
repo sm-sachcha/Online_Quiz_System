@@ -225,10 +225,13 @@ class ResultController extends Controller
 
         $isAllQuizzesExport = !$request->filled('quiz_id');
         $quiz = $attempts->first()?->quiz ?? Quiz::find($request->quiz_id) ?? new Quiz(['title' => 'Results']);
+
+        $quizHeldDate = $quiz->scheduled_at?->format('d-m-Y')?? $attempts->first()?->started_at?->format('d-m-Y');
+
         $filename = $isAllQuizzesExport
             ? 'all results (' . now()->format('d-m-Y') . ').csv'
-            : "{$quiz->title} (" . now()->format('d-m-Y') . ")" . '.csv';
-
+            : $quiz->title . ($quizHeldDate ? " ({$quizHeldDate})" : '') . '.csv';
+             
         $headers = [
             'Content-Type'        => 'text/csv',
             'Content-Disposition' => "attachment; filename=\"{$filename}\"",
@@ -242,6 +245,7 @@ class ResultController extends Controller
             fprintf($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
             $header = [
+                'Rank',
                 'Participant Name',
                 'Obtained Marks',
                 'Total Marks',
@@ -250,7 +254,6 @@ class ResultController extends Controller
                 'Incorrect Answers',
                 'Total Questions',
                 'Status',
-                'Rank',
             ];
 
             if ($isAllQuizzesExport) {
@@ -279,6 +282,7 @@ class ResultController extends Controller
                 $status = ($attempt->result && $attempt->result->passed) ? 'Passed' : 'Failed';
 
                 $row = [
+                    $rank ?? 'N/A',
                     $userName,
                     $attempt->score,
                     $attempt->quiz->total_points,
@@ -287,7 +291,6 @@ class ResultController extends Controller
                     $attempt->incorrect_answers,
                     $attempt->total_questions,
                     $status,
-                    $rank ?? 'N/A',
                 ];
 
                 if ($isAllQuizzesExport) {
