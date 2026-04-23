@@ -209,7 +209,6 @@ class ResultController extends Controller
         $bestIdsQuery->groupBy('quiz_id', 'user_id', 'participant_id');
         $bestRows      = $bestIdsQuery->get();
         $bestIds       = $bestRows->pluck('best_id');
-        $attemptCounts = $bestRows->pluck('attempt_count', 'best_id');
 
         $query = QuizAttempt::with(['user', 'participant', 'quiz', 'quiz.category', 'result'])
             ->whereIn('id', $bestIds);
@@ -224,9 +223,15 @@ class ResultController extends Controller
 
         $attempts = $query->orderByDesc('score')->get();
 
+        $isAllQuizzesExport = !$request->filled('quiz_id');
         $quiz = $attempts->first()?->quiz ?? Quiz::find($request->quiz_id) ?? new Quiz(['title' => 'Results']);
-        $filename = "{$quiz->title} (" . now()->format('d-m-Y') . ")" . '.csv';
 
+        $quizHeldDate = $quiz->scheduled_at?->format('d-m-Y')?? $attempts->first()?->started_at?->format('d-m-Y');
+
+        $filename = $isAllQuizzesExport
+            ? 'all results (' . now()->format('d-m-Y') . ').csv'
+            : $quiz->title . ($quizHeldDate ? " ({$quizHeldDate})" : '') . '.csv';
+             
         $headers = [
             'Content-Type'        => 'text/csv',
             'Content-Disposition' => "attachment; filename=\"{$filename}\"",
@@ -235,12 +240,12 @@ class ResultController extends Controller
             'Expires'             => '0',
         ];
 
-        $callback = function () use ($attempts, $attemptCounts) {
+        $callback = function () use ($attempts, $isAllQuizzesExport) {
             $file = fopen('php://output', 'w');
             fprintf($file, chr(0xEF) . chr(0xBB) . chr(0xBF));
 
-            fputcsv($file, [
-                // 'Date',
+            $header = [
+                'Rank',
                 'Participant Name',
                 'Obtained Marks',
                 'Total Marks',
@@ -249,9 +254,13 @@ class ResultController extends Controller
                 'Incorrect Answers',
                 'Total Questions',
                 'Status',
-                // 'Attempts',
-                'Rank',
-            ]);
+            ];
+
+            if ($isAllQuizzesExport) {
+                array_unshift($header, 'Quiz Name');
+            }
+
+            fputcsv($file, $header);
 
             foreach ($attempts as $attempt) {
                 $percentage = $attempt->quiz->total_points > 0
@@ -272,8 +281,8 @@ class ResultController extends Controller
 
                 $status = ($attempt->result && $attempt->result->passed) ? 'Passed' : 'Failed';
 
-                fputcsv($file, [
-                    // $attempt->created_at ? $attempt->created_at->format('Y-m-d H:i:s') : 'N/A',
+                $row = [
+                    $rank ?? 'N/A',
                     $userName,
                     $attempt->score,
                     $attempt->quiz->total_points,
@@ -282,9 +291,13 @@ class ResultController extends Controller
                     $attempt->incorrect_answers,
                     $attempt->total_questions,
                     $status,
-                    // $attemptCounts->get($attempt->id, 1),
-                    $rank ?? 'N/A',
-                ]);
+                ];
+
+                if ($isAllQuizzesExport) {
+                    array_unshift($row, $attempt->quiz?->title ?? 'N/A');
+                }
+
+                fputcsv($file, $row);
             }
 
             fclose($file);

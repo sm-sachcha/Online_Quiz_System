@@ -27,6 +27,10 @@ class ResultController extends Controller
         if ($attempt->quiz_id != $quizId) {
             abort(404, 'Quiz not found for this attempt.');
         }
+
+        if ($attempt->user_id === null && $attempt->participant_id) {
+            session(['guest_participant_id' => $attempt->participant_id]);
+        }
         
         // Handle guest attempts (user_id is null)
         if ($attempt->user_id === null) {
@@ -80,24 +84,28 @@ class ResultController extends Controller
         ]);
 
         // Merge all data for view
-        return view('user.quiz.result', array_merge(
-            $attemptStats,
-            $leaderboardData,
-            [
-                'attempt' => $attempt,
-                'result' => $result,
-                'quiz' => $quiz,
-                'performanceMetrics' => $performanceMetrics,
-                'timeTakenFormatted' => $this->formatTime($performanceMetrics['time_taken']),
-                'bestScoreInfo' => $bestScoreInfo,
-                'attemptNumber' => $attemptInfo['attempt_number'],
-                'totalAttempts' => $attemptInfo['total_attempts'],
-                'remainingAttempts' => $attemptInfo['remaining_attempts'],
-                'isBestScore' => $attemptInfo['is_best_score'],
-                'canRetake' => $attemptInfo['can_retake'],
-                'attemptHistory' => $attemptHistory
-            ]
-        ));
+        return response()
+            ->view('user.quiz.result', array_merge(
+                $attemptStats,
+                $leaderboardData,
+                [
+                    'attempt' => $attempt,
+                    'result' => $result,
+                    'quiz' => $quiz,
+                    'performanceMetrics' => $performanceMetrics,
+                    'timeTakenFormatted' => $this->formatTime($performanceMetrics['time_taken']),
+                    'bestScoreInfo' => $bestScoreInfo,
+                    'attemptNumber' => $attemptInfo['attempt_number'],
+                    'totalAttempts' => $attemptInfo['total_attempts'],
+                    'remainingAttempts' => $attemptInfo['remaining_attempts'],
+                    'isBestScore' => $attemptInfo['is_best_score'],
+                    'canRetake' => $attemptInfo['can_retake'],
+                    'attemptHistory' => $attemptHistory
+                ]
+            ))
+            ->header('Cache-Control', 'no-cache, no-store, must-revalidate')
+            ->header('Pragma', 'no-cache')
+            ->header('Expires', '0');
     }
     
     private function getOrCalculateResult(QuizAttempt $attempt)

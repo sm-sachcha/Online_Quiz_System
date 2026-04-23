@@ -308,9 +308,9 @@
                         <i class="fas fa-ban fa-2x text-danger mb-2"></i>
                         <h4 class="text-danger">Joining Closed</h4>
                         <p class="mb-0">This quiz has already started, so new participants can no longer join.</p>
-                        <a href="{{ route('user.dashboard') }}" class="btn btn-primary mt-3">
+                        <!-- <a href="{{ route('user.dashboard') }}" class="btn btn-primary mt-3">
                             <i class="fas fa-home"></i> Back to Dashboard
-                        </a>
+                        </a> -->
                     </div>
                 @endif
                 
