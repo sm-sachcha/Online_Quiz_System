@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class QuizController extends Controller
 {
@@ -315,8 +316,16 @@ class QuizController extends Controller
             ]),
         ]);
         
-        broadcast(new QuizStarted($quiz))->toOthers();
-        broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
+        $this->broadcastSafely(
+            new QuizStarted($quiz),
+            'Failed to broadcast quiz start event.',
+            ['quiz_id' => $quiz->id]
+        );
+        $this->broadcastSafely(
+            new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)),
+            'Failed to broadcast participant update after quiz start.',
+            ['quiz_id' => $quiz->id]
+        );
         
         $message = 'Quiz has been started! ' . $joinedParticipants . ' participants have been notified.';
         
@@ -349,8 +358,16 @@ class QuizController extends Controller
             'ends_at' => now()
         ]);
 
-        broadcast(new QuizEnded($quiz))->toOthers();
-        broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
+        $this->broadcastSafely(
+            new QuizEnded($quiz),
+            'Failed to broadcast quiz end event.',
+            ['quiz_id' => $quiz->id]
+        );
+        $this->broadcastSafely(
+            new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)),
+            'Failed to broadcast participant update after quiz end.',
+            ['quiz_id' => $quiz->id]
+        );
         
         Log::info('Quiz ended manually by admin', [
             'quiz_id' => $quiz->id,
@@ -439,7 +456,14 @@ public function participants(Quiz $quiz)
             
             $quiz = $participant->quiz;
             $participant->delete();
-            broadcast(new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)))->toOthers();
+            $this->broadcastSafely(
+                new QuizParticipantsUpdated($quiz, $this->quizParticipantsPayloadService->build($quiz)),
+                'Failed to broadcast participant removal update.',
+                [
+                    'quiz_id' => $quiz->id,
+                    'participant_id' => $participantId,
+                ]
+            );
             
             return response()->json(['success' => true, 'message' => 'Participant removed successfully']);
             
@@ -461,6 +485,18 @@ public function participants(Quiz $quiz)
             'total_points' => $totalPoints,
             'total_questions' => $totalQuestions
         ]);
+    }
+
+    private function broadcastSafely(object $event, string $message, array $context = []): void
+    {
+        try {
+            broadcast($event)->toOthers();
+        } catch (Throwable $exception) {
+            Log::warning($message, array_merge($context, [
+                'event' => $event::class,
+                'error' => $exception->getMessage(),
+            ]));
+        }
     }
 
 }
