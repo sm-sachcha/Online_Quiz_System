@@ -128,8 +128,8 @@ Route::middleware(['auth', 'role:admin,master_admin'])->prefix('admin')->name('a
     // Results
     Route::prefix('results')->name('results.')->group(function () {
         Route::get('/', [AdminResultController::class, 'index'])->name('index');
-        Route::get('{attempt}', [AdminResultController::class, 'show'])->name('show');
         Route::get('export/csv', [AdminResultController::class, 'export'])->name('export');
+        Route::get('{attempt}', [AdminResultController::class, 'show'])->name('show');
     });
 });
 

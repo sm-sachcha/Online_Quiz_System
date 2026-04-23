@@ -3,10 +3,87 @@
 @section('title', 'User Activity Report')
 
 @section('content')
+<style>
+    .activity-report-card {
+        border: none;
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.08);
+    }
+    .activity-report-header {
+        background: linear-gradient(135deg, #0f766e 0%, #0891b2 100%);
+        border: none;
+        padding: 1rem 1.25rem;
+    }
+    .activity-table-card {
+        border: 1px solid #e2e8f0;
+        border-radius: 18px;
+        overflow: hidden;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
+    }
+    .activity-table-card .card-header {
+        background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+        border-bottom: 1px solid #e2e8f0;
+        padding: 1rem 1.25rem;
+    }
+    #activitiesTable thead th {
+        background: #f8fafc;
+        color: #334155;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        white-space: nowrap;
+        border-bottom: 1px solid #e2e8f0;
+    }
+    #activitiesTable tbody td {
+        vertical-align: middle;
+        border-color: #eef2f7;
+    }
+    #activitiesTable tbody tr {
+        transition: background-color 0.18s ease, transform 0.18s ease;
+    }
+    #activitiesTable tbody tr:hover {
+        background: #f8fafc;
+    }
+    .activity-user-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #334155 0%, #0f172a 100%);
+        color: #fff;
+        font-weight: 700;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    }
+    .activity-user-agent {
+        display: inline-block;
+        max-width: 280px;
+        color: #64748b;
+    }
+    .activity-pagination-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        padding-top: 1rem;
+    }
+    @media (max-width: 768px) {
+        .activity-user-agent {
+            max-width: 160px;
+        }
+        .activity-pagination-wrap {
+            justify-content: center;
+        }
+    }
+</style>
 <div class="row">
     <div class="col-md-12">
-        <div class="card mb-4">
-            <div class="card-header bg-success text-white">
+        <div class="card activity-report-card mb-4">
+            <div class="card-header activity-report-header text-white">
                 <h5 class="mb-0"><i class="fas fa-users"></i> User Activity Report</h5>
             </div>
             <div class="card-body">
@@ -43,7 +120,7 @@
 
                 <!-- Summary Cards -->
                 <div class="row mb-4">
-                    <div class="col-md-4">
+                    <div class="col-md-6">
                         <div class="card bg-primary text-white">
                             <div class="card-body">
                                 <h6 class="card-title">Total Activities</h6>
@@ -51,7 +128,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-6">
                         <div class="card bg-success text-white">
                             <div class="card-body">
                                 <h6 class="card-title">Unique Users</h6>
@@ -59,7 +136,7 @@
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-4">
+                    <!-- <div class="col-md-4">
                         <div class="card bg-info text-white">
                             <div class="card-body">
                                 <h6 class="card-title">Most Common Action</h6>
@@ -67,7 +144,7 @@
                                 <small>{{ $summary['most_common_action']->count ?? 0 }} times</small>
                             </div>
                         </div>
-                    </div>
+                    </div> -->
                 </div>
 
                 <!-- Activity Chart -->
@@ -83,7 +160,7 @@
                 @endif
 
                 <!-- Activities Table -->
-                <div class="card">
+                <!-- <div class="card activity-table-card">
                     <div class="card-header">
                         <h6 class="mb-0"><i class="fas fa-list"></i> Recent Activities</h6>
                     </div>
@@ -106,8 +183,7 @@
                                             <tr>
                                                 <td>
                                                     <div class="d-flex align-items-center">
-                                                        <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-2" 
-                                                             style="width: 32px; height: 32px;">
+                                                        <div class="activity-user-avatar me-2">
                                                             {{ strtoupper(substr($activity->user->name ?? 'U', 0, 1)) }}
                                                         </div>
                                                         <strong>{{ $activity->user->name ?? 'Deleted User' }}</strong>
@@ -130,7 +206,7 @@
                                                     <code>{{ $activity->ip_address }}</code>
                                                 </td>
                                                 <td>
-                                                    <small title="{{ $activity->user_agent }}">
+                                                    <small class="activity-user-agent" title="{{ $activity->user_agent }}">
                                                         {{ Str::limit($activity->user_agent, 40) }}
                                                     </small>
                                                 </td>
@@ -154,8 +230,8 @@
                                 </table>
                             </div>
                             
-                            <div class="mt-3">
-                                {{ $activities->withQueryString()->links() }}
+                            <div class="activity-pagination-wrap">
+                                {{ $activities->withQueryString()->links('admin.button.next-previous') }}
                             </div>
                         @else
                             <div class="text-center py-5">
@@ -168,15 +244,15 @@
                             </div>
                         @endif
                     </div>
-                </div>
+                </div> -->
 
                 <!-- Export Button -->
-                <div class="mt-3 text-end">
+                <!-- <div class="mt-3 text-end">
                     <a href="{{ route('admin.reports.user-activity', array_merge(request()->all(), ['export' => 'csv'])) }}" 
                        class="btn btn-success">
                         <i class="fas fa-file-csv"></i> Export to CSV
                     </a>
-                </div>
+                </div> -->
             </div>
         </div>
     </div>
@@ -185,35 +261,6 @@
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    $(document).ready(function() {
-        // Initialize DataTable only if table exists and not already initialized
-        if ($('#activitiesTable').length && $.fn.DataTable.isDataTable('#activitiesTable')) {
-            $('#activitiesTable').DataTable().destroy();
-        }
-        
-        if ($('#activitiesTable').length && $('#activitiesTable tbody tr').length > 0) {
-            $('#activitiesTable').DataTable({
-                pageLength: 25,
-                responsive: true,
-                ordering: true,
-                searching: true,
-                paging: true,
-                info: true,
-                order: [[5, 'desc']],
-                columnDefs: [
-                    { orderable: false, targets: [4] } // Disable ordering on details column
-                ],
-                language: {
-                    emptyTable: "No activities found",
-                    zeroRecords: "No matching activities found",
-                    search: "Search:",
-                    lengthMenu: "Show _MENU_ entries",
-                    info: "Showing _START_ to _END_ of _TOTAL_ entries"
-                }
-            });
-        }
-    });
-    
     @if($activityByDay->count() > 0)
     const ctx = document.getElementById('activityChart').getContext('2d');
     const activityData = @json($activityByDay);

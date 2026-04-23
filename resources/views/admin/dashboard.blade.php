@@ -3,6 +3,76 @@
 @section('title', 'Admin Dashboard')
 
 @section('content')
+<style>
+    .dashboard-equal-card {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+    .dashboard-equal-card .card-header,
+    .dashboard-equal-card .card-footer {
+        flex-shrink: 0;
+    }
+    .dashboard-equal-card-body {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 280px;
+    }
+    .dashboard-mini-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    .dashboard-page-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 2.2rem;
+        height: 2.2rem;
+        border: 1px solid #dbe4f0;
+        border-radius: 999px;
+        background: #fff;
+        color: #334155;
+        font-size: 0.88rem;
+        font-weight: 600;
+        padding: 0 0.75rem;
+        transition: all 0.18s ease;
+    }
+    .dashboard-page-btn:hover {
+        background: #f8fafc;
+        border-color: #cbd5e1;
+        color: #0f172a;
+    }
+    .dashboard-page-btn.is-active {
+        background: #0f172a;
+        border-color: #0f172a;
+        color: #fff;
+        box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
+    }
+    .dashboard-page-panel {
+        display: none;
+        flex: 1 1 auto;
+    }
+    .dashboard-page-panel.is-active {
+        display: block;
+    }
+    .dashboard-list-shell,
+    .dashboard-table-shell {
+        flex: 1 1 auto;
+    }
+    .dashboard-table-shell .table-responsive {
+        height: 100%;
+    }
+    .dashboard-table-shell table {
+        margin-bottom: 0;
+    }
+    .dashboard-section-gap {
+        margin-top: 1.75rem;
+    }
+</style>
 <div class="row">
     <div class="col-md-12">
         @if(session('show_welcome') && session('welcome_message'))
@@ -117,34 +187,39 @@
 <div class="row">
     <!-- Recent Quizzes -->
     <div class="col-md-6">
-        <div class="card mb-4">
+        <div class="card mb-4 dashboard-equal-card">
             <div class="card-header">
                 <h5 class="mb-0"><i class="fas fa-clock"></i> Recent Quizzes</h5>
             </div>
-            <div class="card-body p-0">
+            <div class="card-body p-0 dashboard-equal-card-body">
                 @if($recentQuizzes->count() > 0)
-                    <div class="list-group list-group-flush">
-                        @foreach($recentQuizzes as $quiz)
-                            <div class="list-group-item">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <h6 class="mb-1">{{ $quiz->title }}</h6>
-                                        <small class="text-muted">
-                                            <i class="fas fa-user"></i> {{ $quiz->creator->name ?? 'Unknown' }} |
-                                            @if($quiz->category)
-                                                <i class="fas fa-tag"></i> {{ $quiz->category->name }}
-                                            @else
-                                                <i class="fas fa-globe"></i> Public Quiz
-                                            @endif
-                                        </small>
+                    @php $recentQuizPages = $recentQuizzes->chunk(4); @endphp
+                    @foreach($recentQuizPages as $pageIndex => $quizPage)
+                        <div class="dashboard-page-panel dashboard-list-shell {{ $pageIndex === 0 ? 'is-active' : '' }}" data-page-group="recent-quizzes" data-page-panel="{{ $pageIndex + 1 }}">
+                            <div class="list-group list-group-flush">
+                                @foreach($quizPage as $quiz)
+                                    <div class="list-group-item border-top">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 class="mb-1">{{ $quiz->title }}</h6>
+                                                <small class="text-muted">
+                                                    <i class="fas fa-user"></i> {{ $quiz->creator->name ?? 'Unknown' }} |
+                                                    @if($quiz->category)
+                                                        <i class="fas fa-tag"></i> {{ $quiz->category->name }}
+                                                    @else
+                                                        <i class="fas fa-globe"></i> Public Quiz
+                                                    @endif
+                                                </small>
+                                            </div>
+                                            <span class="badge {{ $quiz->is_published ? 'bg-success' : 'bg-secondary' }}">
+                                                {{ $quiz->is_published ? 'Published' : 'Draft' }}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <span class="badge {{ $quiz->is_published ? 'bg-success' : 'bg-secondary' }}">
-                                        {{ $quiz->is_published ? 'Published' : 'Draft' }}
-                                    </span>
-                                </div>
+                                @endforeach
                             </div>
-                        @endforeach
-                    </div>
+                        </div>
+                    @endforeach
                 @else
                     <div class="text-center py-4">
                         <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
@@ -152,35 +227,51 @@
                     </div>
                 @endif
             </div>
+            @if(isset($recentQuizPages) && $recentQuizPages->count() > 1)
+                <div class="card-footer bg-white border-0 pt-3 text-center">
+                    <div class="dashboard-mini-pagination" data-page-nav="recent-quizzes">
+                        @foreach($recentQuizPages as $pageIndex => $quizPage)
+                            <button type="button" class="dashboard-page-btn {{ $pageIndex === 0 ? 'is-active' : '' }}" data-page-target="{{ $pageIndex + 1 }}">
+                                {{ $pageIndex + 1 }}
+                            </button>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
         </div>
     </div>
 
 
         <!-- Top Quizzes -->
     <div class="col-md-6">
-        <div class="card">
+        <div class="card dashboard-equal-card">
             <div class="card-header">
                 <h5 class="mb-0"><i class="fas fa-fire"></i> Most Popular Quizzes</h5>
             </div>
-            <div class="card-body">
+            <div class="card-body dashboard-equal-card-body">
                 @if($topQuizzes->count() > 0)
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Quiz</th>
-                                    <th>Attempts</th>
-                                 </thead>
-                            <tbody>
-                                @foreach($topQuizzes as $quiz)
-                                    <tr>
-                                        <td>{{ $quiz->title }}</td>
-                                        <td><span class="badge bg-primary">{{ $quiz->attempts_count }}</span></td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                         </table>
-                    </div>
+                    @php $topQuizPages = $topQuizzes->chunk(4); @endphp
+                    @foreach($topQuizPages as $pageIndex => $quizPage)
+                        <div class="dashboard-page-panel dashboard-table-shell {{ $pageIndex === 0 ? 'is-active' : '' }}" data-page-group="top-quizzes" data-page-panel="{{ $pageIndex + 1 }}">
+                            <div class="table-responsive">
+                                <table class="table table-hover mb-0">
+                                    <thead>
+                                        <tr>
+                                            <th>Quiz</th>
+                                            <th>Attempts</th>
+                                         </thead>
+                                    <tbody>
+                                        @foreach($quizPage as $quiz)
+                                            <tr>
+                                                <td>{{ $quiz->title }}</td>
+                                                <td><span class="badge bg-primary">{{ $quiz->attempts_count }}</span></td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                 </table>
+                            </div>
+                        </div>
+                    @endforeach
                 @else
                     <div class="text-center py-4">
                         <i class="fas fa-chart-line fa-3x text-muted mb-3"></i>
@@ -188,6 +279,17 @@
                     </div>
                 @endif
             </div>
+            @if(isset($topQuizPages) && $topQuizPages->count() > 1)
+                <div class="card-footer bg-white border-0 pt-0 pb-3 text-center">
+                    <div class="dashboard-mini-pagination" data-page-nav="top-quizzes">
+                        @foreach($topQuizPages as $pageIndex => $quizPage)
+                            <button type="button" class="dashboard-page-btn {{ $pageIndex === 0 ? 'is-active' : '' }}" data-page-target="{{ $pageIndex + 1 }}">
+                                {{ $pageIndex + 1 }}
+                            </button>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
         </div>
     </div>
 
@@ -228,7 +330,7 @@
     </div>
 </div> -->
 
-<div class="row">
+<div class="row dashboard-section-gap">
     <!-- Activity Chart -->
     <div class="col-md-12">
         <div class="card">
@@ -245,6 +347,23 @@
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
+    document.querySelectorAll('[data-page-nav]').forEach((nav) => {
+        nav.querySelectorAll('[data-page-target]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const groupName = nav.getAttribute('data-page-nav');
+                const targetPage = button.getAttribute('data-page-target');
+
+                document.querySelectorAll(`[data-page-group="${groupName}"]`).forEach((panel) => {
+                    panel.classList.toggle('is-active', panel.getAttribute('data-page-panel') === targetPage);
+                });
+
+                nav.querySelectorAll('[data-page-target]').forEach((navButton) => {
+                    navButton.classList.toggle('is-active', navButton === button);
+                });
+            });
+        });
+    });
+
     const ctx = document.getElementById('activityChart').getContext('2d');
     const activityData = @json($activityData);
     

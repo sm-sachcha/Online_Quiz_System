@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Cache;
+use Throwable;
 
 class SystemSettingsController extends Controller
 {
@@ -43,10 +43,12 @@ class SystemSettingsController extends Controller
             ]);
 
             // Clear all caches to apply changes
-            Artisan::call('config:clear');
-            Artisan::call('cache:clear');
-            Artisan::call('view:clear');
-            Artisan::call('route:clear');
+            $failedCommands = $this->runArtisanCommands([
+                'config:clear',
+                'cache:clear',
+                'view:clear',
+                'route:clear',
+            ]);
 
             // Update config values in memory
             config(['app.name' => $request->app_name]);
@@ -57,6 +59,10 @@ class SystemSettingsController extends Controller
             date_default_timezone_set($request->timezone);
 
             $message = "System settings updated successfully!<br>Timezone changed to: <strong>" . $request->timezone . "</strong>";
+
+            if ($failedCommands !== []) {
+                $message .= '<br>Some cleanup steps were skipped: <strong>'.implode(', ', $failedCommands).'</strong>';
+            }
 
             return back()->with('success', $message);
 
@@ -94,28 +100,25 @@ class SystemSettingsController extends Controller
             'type' => 'required|in:all,config,route,view,cache,events'
         ]);
 
-        switch ($request->type) {
-            case 'all':
-                Artisan::call('optimize:clear');
-                break;
-            case 'config':
-                Artisan::call('config:clear');
-                break;
-            case 'route':
-                Artisan::call('route:clear');
-                break;
-            case 'view':
-                Artisan::call('view:clear');
-                break;
-            case 'cache':
-                Artisan::call('cache:clear');
-                break;
-            case 'events':
-                Artisan::call('event:clear');
-                break;
+        $commands = match ($request->type) {
+            'all' => ['config:clear', 'route:clear', 'view:clear', 'event:clear', 'cache:clear'],
+            'config' => ['config:clear'],
+            'route' => ['route:clear'],
+            'view' => ['view:clear'],
+            'cache' => ['cache:clear'],
+            'events' => ['event:clear'],
+        };
+
+        $failedCommands = $this->runArtisanCommands($commands);
+
+        if ($failedCommands === []) {
+            return back()->with('success', ucfirst($request->type) . ' cache cleared successfully.');
         }
 
-        return back()->with('success', ucfirst($request->type) . ' cache cleared successfully.');
+        return back()->with(
+            'error',
+            ucfirst($request->type) . ' cache clear completed with skipped steps: ' . implode(', ', $failedCommands) . '.'
+        );
     }
 
     public function logs()
@@ -180,5 +183,26 @@ class SystemSettingsController extends Controller
             
             file_put_contents($envFile, $content);
         }
+    }
+
+    /**
+     * Run artisan commands without letting a single failing command abort the request.
+     *
+     * @param  array<int, string>  $commands
+     * @return array<int, string>
+     */
+    private function runArtisanCommands(array $commands): array
+    {
+        $failedCommands = [];
+
+        foreach ($commands as $command) {
+            try {
+                Artisan::call($command);
+            } catch (Throwable) {
+                $failedCommands[] = $command;
+            }
+        }
+
+        return $failedCommands;
     }
 }

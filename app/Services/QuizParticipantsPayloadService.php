@@ -75,7 +75,11 @@ class QuizParticipantsPayloadService
 
                 if ($key && $inProgressKeys->contains($key)) {
                     $effectiveStatus = 'taking_quiz';
-                } elseif ($key && $completedKeys->contains($key)) {
+                } elseif (
+                    $key
+                    && !in_array($participant->status, ['joined', 'taking_quiz'], true)
+                    && $completedKeys->contains($key)
+                ) {
                     $effectiveStatus = 'completed';
                 }
 

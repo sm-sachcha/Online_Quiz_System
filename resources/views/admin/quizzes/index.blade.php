@@ -107,7 +107,7 @@
                                         <td>
                                             <div class="share-link-container">
                                                 <input type="text" class="share-link-input" id="quizLink{{ $quiz->id }}" 
-                                                       value="{{ url('https://zynquiz.shadhinlab.xyz/user/quiz/lobby/' . $quiz->id) }}" readonly>
+                                                       value="{{ url('/user/quiz/lobby/' . $quiz->id) }}" readonly>
                                                 <button class="btn btn-sm btn-primary copy-link-btn" data-quiz-id="{{ $quiz->id }}">
                                                     <i class="fas fa-copy"></i> Copy
                                                 </button>

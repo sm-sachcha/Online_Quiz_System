@@ -18,7 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         // Global middleware
         $middleware->append([
-            \Illuminate\Http\Middleware\TrustHosts::class,
+            \App\Http\Middleware\TrustHosts::class,
             \Illuminate\Http\Middleware\TrustProxies::class,
             \Illuminate\Http\Middleware\HandleCors::class,
             \Illuminate\Foundation\Http\Middleware\PreventRequestsDuringMaintenance::class,
@@ -60,6 +60,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => AdminMiddleware::class,
             'quiz.access' => CheckQuizAccess::class,
         ]);
+        
     })
     ->withExceptions(function (Exceptions $exceptions) {
         //

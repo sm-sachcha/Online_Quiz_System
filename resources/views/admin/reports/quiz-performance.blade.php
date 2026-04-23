@@ -116,7 +116,7 @@
                 @endif
 
                 <!-- Top Performers -->
-                <div class="card mb-4">
+                <!-- <div class="card mb-4">
                     <div class="card-header">
                         <h6 class="mb-0"><i class="fas fa-trophy"></i> Top Performers</h6>
                     </div>
@@ -179,7 +179,7 @@
                             <p class="text-muted text-center mb-0">No attempts found.</p>
                         @endif
                     </div>
-                </div>
+                </div> -->
 
                 <!-- All Attempts Table -->
                 <div class="card">

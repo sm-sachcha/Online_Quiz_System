@@ -359,6 +359,8 @@
                                 }
 
                                 $attemptCount = $attempt->attempt_count ?? 1;
+                                $attemptNumber = $attempt->attempt_number ?? 1;
+                                $isBestResult = (bool) ($attempt->is_best_result ?? false);
                             @endphp
                             <tr>
                                 {{-- # --}}
@@ -409,6 +411,13 @@
                                     <span class="text-muted" style="font-size:12px;">
                                         / {{ $attempt->quiz->total_points }} pts
                                     </span>
+                                    @if($isBestResult)
+                                        <div class="mt-1">
+                                            <span class="badge bg-warning text-dark">
+                                                <i class="fas fa-trophy"></i> Best Result
+                                            </span>
+                                        </div>
+                                    @endif
                                 </td>
 
                                 {{-- Progress bar --}}
