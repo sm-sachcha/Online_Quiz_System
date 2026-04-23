@@ -713,7 +713,7 @@
             </div>
             <div class="flex-grow-1">
                 <strong>${escapeHtml(participant.name)}</strong>
-                ${isGuest ? '<span class="guest-badge">Guest</span>' : ''}
+                ${isGuest ? '<span class="guest-badge">Participant</span>' : ''}
                 ${isTakingQuiz ? '<span class="taking-quiz-badge ms-1"><i class="fas fa-play"></i> Taking Quiz</span>' : ''}
                 ${isCurrentUser ? '<br><small class="text-muted">You</small>' : ''}
             </div>
