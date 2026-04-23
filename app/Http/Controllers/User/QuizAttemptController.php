@@ -23,9 +23,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Collection;
 
 class QuizAttemptController extends Controller
 {
+    private const PRE_QUESTION_COUNTDOWN_SECONDS = 5;
+    private const DEVICE_DELAY_GRACE_SECONDS = 2;
+
     protected QuizService $quizService;
     protected LeaderboardService $leaderboardService;
     protected QuizParticipantsPayloadService $quizParticipantsPayloadService;
@@ -316,6 +320,9 @@ class QuizAttemptController extends Controller
         if ($timeExpiryCheck) {
             return $timeExpiryCheck;
         }
+
+        $this->syncAttemptProgressToLiveSchedule($quiz, $attempt);
+        $attempt->refresh();
         
         // Get next question
         $nextQuestionData = $this->getNextQuestion($quiz, $attempt);
@@ -363,16 +370,7 @@ class QuizAttemptController extends Controller
 
     private function getNextQuestion(Quiz $quiz, QuizAttempt $attempt)
     {
-        $questionSequence = collect(
-            $attempt->question_sequence ?: $quiz->questions()->orderBy('order')->pluck('id')->all()
-        );
-
-        $allQuestions = Question::with('options')
-            ->where('quiz_id', $quiz->id)
-            ->whereIn('id', $questionSequence->all())
-            ->get()
-            ->sortBy(fn ($question) => $questionSequence->search($question->id))
-            ->values();
+        $allQuestions = $this->loadOrderedQuestions($quiz, $attempt);
         
         if ($allQuestions->isEmpty()) {
             return ['is_completed' => true, 'error' => 'This quiz has no questions.'];
@@ -407,10 +405,117 @@ class QuizAttemptController extends Controller
             'currentQuestion' => $currentQuestion,
             'currentQuestionNumber' => $answeredCount + 1,
             'remainingTimeSeconds' => (int) $currentQuestion->time_seconds,
+            'questionTiming' => $this->buildQuestionTimingPayload(
+                $attempt,
+                $allQuestions,
+                $answeredCount + 1
+            ),
             'answeredCount' => $answeredCount,
             'totalQuestions' => $totalQuestions,
             'is_completed' => false
         ];
+    }
+
+    private function buildQuestionTimingPayload(
+        QuizAttempt $attempt,
+        Collection $orderedQuestions,
+        int $questionNumber
+    ): array {
+        $questionIndex = max(0, $questionNumber - 1);
+        $currentQuestion = $orderedQuestions->get($questionIndex);
+        $sessionStartedAt = $attempt->started_at ? $attempt->started_at->copy() : now();
+
+        $elapsedQuestionSeconds = $orderedQuestions
+            ->take($questionIndex)
+            ->sum(fn (Question $question) => (int) $question->time_seconds);
+
+        $elapsedCountdownSeconds = $questionIndex * self::PRE_QUESTION_COUNTDOWN_SECONDS;
+
+        $countdownStartAt = $sessionStartedAt
+            ->copy()
+            ->addSeconds($elapsedQuestionSeconds + $elapsedCountdownSeconds);
+
+        $questionStartAt = $countdownStartAt
+            ->copy()
+            ->addSeconds(self::PRE_QUESTION_COUNTDOWN_SECONDS);
+
+        $questionDurationSeconds = (int) ($currentQuestion?->time_seconds ?? 0);
+
+        return [
+            'server_now' => now()->toIso8601String(),
+            'session_started_at' => $sessionStartedAt->toIso8601String(),
+            'countdown_seconds' => self::PRE_QUESTION_COUNTDOWN_SECONDS,
+            'delay_grace_seconds' => self::DEVICE_DELAY_GRACE_SECONDS,
+            'countdown_start_at' => $countdownStartAt->toIso8601String(),
+            'question_start_at' => $questionStartAt->toIso8601String(),
+            'question_end_at' => $questionStartAt->copy()->addSeconds($questionDurationSeconds)->toIso8601String(),
+        ];
+    }
+
+    private function syncAttemptProgressToLiveSchedule(Quiz $quiz, QuizAttempt $attempt): void
+    {
+        DB::transaction(function () use ($quiz, $attempt) {
+            $lockedAttempt = QuizAttempt::whereKey($attempt->id)->lockForUpdate()->first();
+
+            if (!$lockedAttempt || $lockedAttempt->status !== 'in_progress') {
+                return;
+            }
+
+            $orderedQuestions = $this->loadOrderedQuestions($quiz, $lockedAttempt, false);
+            $answeredQuestionIds = UserAnswer::where('quiz_attempt_id', $lockedAttempt->id)
+                ->pluck('question_id')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            $sessionStartedAt = $lockedAttempt->started_at ? $lockedAttempt->started_at->copy() : now();
+            $cursor = $sessionStartedAt->copy();
+            $missedQuestions = 0;
+
+            foreach ($orderedQuestions as $question) {
+                $questionStartAt = $cursor->copy()->addSeconds(self::PRE_QUESTION_COUNTDOWN_SECONDS);
+                $questionEndAt = $questionStartAt->copy()->addSeconds((int) $question->time_seconds);
+
+                if (!in_array((int) $question->id, $answeredQuestionIds, true)
+                    && now()->greaterThan($questionEndAt->copy()->addSeconds(self::DEVICE_DELAY_GRACE_SECONDS))) {
+                    UserAnswer::create([
+                        'quiz_attempt_id' => $lockedAttempt->id,
+                        'question_id' => $question->id,
+                        'option_id' => null,
+                        'answer_text' => null,
+                        'is_correct' => false,
+                        'points_earned' => 0,
+                        'time_taken_seconds' => (int) $question->time_seconds,
+                    ]);
+
+                    $lockedAttempt->incorrect_answers++;
+                    $missedQuestions++;
+                }
+
+                $cursor = $questionEndAt;
+            }
+
+            if ($missedQuestions > 0) {
+                $lockedAttempt->save();
+            }
+        });
+    }
+
+    private function loadOrderedQuestions(Quiz $quiz, QuizAttempt $attempt, bool $withOptions = true): Collection
+    {
+        $questionSequence = collect(
+            $attempt->question_sequence ?: $quiz->questions()->orderBy('order')->pluck('id')->all()
+        );
+
+        $query = Question::query()->where('quiz_id', $quiz->id)->whereIn('id', $questionSequence->all());
+
+        if ($withOptions) {
+            $query->with('options');
+        }
+
+        return $query
+            ->get()
+            ->sortBy(fn ($question) => $questionSequence->search($question->id))
+            ->values();
     }
 
     private function completeQuiz(Quiz $quiz, QuizAttempt $attempt)
@@ -522,6 +627,10 @@ class QuizAttemptController extends Controller
                 $this->broadcastNextAttemptQuestion($quiz, $attempt);
             }
 
+            $nextQuestionPayload = $isCompleted
+                ? null
+                : $this->buildNextAttemptQuestionPayload($quiz, $attempt);
+
             $correctOption = null;
             if ($request->question_type !== 'multiple_choice') {
                 $question = Question::with('options')->find($request->question_id);
@@ -541,6 +650,7 @@ class QuizAttemptController extends Controller
                 'incorrect_answers' => $attempt->incorrect_answers,
                 'correct_option_id' => $correctOption ? $correctOption->id : null,
                 'selected_option_id' => $request->option_id,
+                'next_question' => $nextQuestionPayload,
                 'message' => $isCompleted ? 'Quiz completed! Redirecting to results...' : 'Answer submitted successfully!'
             ]);
         } catch (\Exception $e) {
@@ -683,6 +793,10 @@ class QuizAttemptController extends Controller
                 $this->broadcastParticipantsUpdated($quiz);
                 $this->broadcastNextAttemptQuestion($quiz, $attempt);
             }
+
+            $nextQuestionPayload = $isCompleted
+                ? null
+                : $this->buildNextAttemptQuestionPayload($quiz, $attempt);
             
             return response()->json([
                 'success' => true,
@@ -693,7 +807,8 @@ class QuizAttemptController extends Controller
                 'answered_count' => $answeredCount,
                 'total_questions' => $totalQuestions,
                 'correct_answers' => $attempt->correct_answers,
-                'incorrect_answers' => $attempt->incorrect_answers
+                'incorrect_answers' => $attempt->incorrect_answers,
+                'next_question' => $nextQuestionPayload,
             ]);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
@@ -934,8 +1049,51 @@ class QuizAttemptController extends Controller
             $attempt,
             $nextQuestionData['currentQuestion'],
             (int) $nextQuestionData['currentQuestionNumber'],
-            (int) $nextQuestionData['totalQuestions']
+            (int) $nextQuestionData['totalQuestions'],
+            $nextQuestionData['questionTiming'] ?? []
         ))->toOthers();
+    }
+
+    private function buildNextAttemptQuestionPayload(Quiz $quiz, QuizAttempt $attempt): ?array
+    {
+        $nextQuestionData = $this->getNextQuestion($quiz, $attempt);
+
+        if (($nextQuestionData['is_completed'] ?? false) || empty($nextQuestionData['currentQuestion'])) {
+            return null;
+        }
+
+        return $this->transformQuestionForAttemptBroadcast(
+            $nextQuestionData['currentQuestion'],
+            (int) $nextQuestionData['currentQuestionNumber'],
+            (int) $nextQuestionData['totalQuestions'],
+            $nextQuestionData['questionTiming'] ?? []
+        );
+    }
+
+    private function transformQuestionForAttemptBroadcast(
+        Question $question,
+        int $questionNumber,
+        int $totalQuestions,
+        array $timing = []
+    ): array {
+        return [
+            'question_id' => $question->id,
+            'question_text' => $question->question_text,
+            'question_type' => $question->question_type,
+            'question_number' => $questionNumber,
+            'total_questions' => $totalQuestions,
+            'time_seconds' => (int) $question->time_seconds,
+            'points' => (int) $question->points,
+            'show_answer' => (bool) $question->show_answer,
+            'timing' => $timing,
+            'options' => $question->options->map(function ($option) {
+                return [
+                    'id' => $option->id,
+                    'text' => $option->option_text,
+                    'is_correct' => (bool) $option->is_correct,
+                ];
+            })->values()->all(),
+        ];
     }
 
     private function broadcastAttemptResultUpdated(Quiz $quiz, QuizAttempt $attempt): void

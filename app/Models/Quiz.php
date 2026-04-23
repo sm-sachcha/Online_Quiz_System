@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 
 class Quiz extends Model
@@ -155,6 +156,24 @@ class Quiz extends Model
     public function getParticipantsCountAttribute()
     {
         return $this->activeParticipants()->count();
+    }
+
+    /**
+     * Resolve the authoritative live start time for the quiz session.
+     */
+    public function resolveLiveStartedAt(): Carbon
+    {
+        $liveStartedAt = data_get($this->settings, 'live_started_at');
+
+        if ($liveStartedAt) {
+            return Carbon::parse($liveStartedAt);
+        }
+
+        if ($this->scheduled_at) {
+            return $this->scheduled_at->copy();
+        }
+
+        return now();
     }
     
     /**

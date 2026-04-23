@@ -307,12 +307,14 @@ class QuizController extends Controller
                 ->with('error', $message);
         }
         
+        $liveStartedAt = now();
+
         $quiz->update([
             'is_published' => true,
-            'scheduled_at' => now(),
-            'ends_at' => now()->addMinutes($quiz->duration_minutes),
+            'scheduled_at' => $liveStartedAt,
+            'ends_at' => $liveStartedAt->copy()->addMinutes($quiz->duration_minutes),
             'settings' => array_merge($quiz->settings ?? [], [
-                'live_started_at' => now()->toIso8601String(),
+                'live_started_at' => $liveStartedAt->toIso8601String(),
             ]),
         ]);
         

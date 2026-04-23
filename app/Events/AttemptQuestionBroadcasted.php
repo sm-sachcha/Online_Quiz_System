@@ -20,7 +20,8 @@ class AttemptQuestionBroadcasted implements ShouldBroadcastNow
         public QuizAttempt $attempt,
         public Question $question,
         public int $questionNumber,
-        public int $totalQuestions
+        public int $totalQuestions,
+        public array $timing = []
     ) {
     }
 
@@ -47,6 +48,7 @@ class AttemptQuestionBroadcasted implements ShouldBroadcastNow
             'time_seconds' => (int) $this->question->time_seconds,
             'points' => (int) $this->question->points,
             'show_answer' => (bool) $this->question->show_answer,
+            'timing' => $this->timing,
             'options' => $this->question->options->map(function ($option) {
                 return [
                     'id' => $option->id,

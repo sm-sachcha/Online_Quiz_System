@@ -7,7 +7,6 @@ use App\Models\Question;
 use App\Models\QuizAttempt;
 use App\Models\UserAnswer;
 use App\Models\QuizParticipant;
-use App\Events\QuizStarted;
 use App\Events\QuizEnded;
 use App\Events\QuestionBroadcasted;
 use Illuminate\Support\Collection;
@@ -27,7 +26,7 @@ class QuizService
             'has_participant' => !is_null($participant)
         ]);
 
-        $startedAt = now();
+        $startedAt = $quiz->resolveLiveStartedAt();
 
         $participantId = null;
         if ($participant) {
@@ -72,8 +71,6 @@ class QuizService
             'participant_id' => $participantId,
             'question_sequence' => $questionSequence
         ]);
-
-        broadcast(new QuizStarted($quiz))->toOthers();
 
         return $attempt;
     }
