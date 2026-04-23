@@ -19,7 +19,7 @@ class QuizStarted implements ShouldBroadcastNow
     public function __construct(Quiz $quiz)
     {
         $this->quiz = $quiz;
-        $this->startTime = now();
+        $this->startTime = $quiz->resolveLiveStartedAt();
     }
 
     public function broadcastOn()

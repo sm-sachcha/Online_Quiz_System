@@ -314,7 +314,7 @@
                             <th width="45">#</th>
                             <th>Participant</th>
                             <th style="width:90px;" class="text-center">Attempts</th>
-                            <th>Quiz</th>
+                            <th>Quiz Name</th>
                             <th>Score</th>
                             <th style="width:130px;">Progress</th>
                             <th>Correct / Wrong</th>
@@ -400,9 +400,9 @@
                                     <div class="fw-semibold" style="font-size:14px;">
                                         {{ Str::limit($attempt->quiz->title, 38) }}
                                     </div>
-                                    <div class="text-muted" style="font-size:12px;">
+                                    <!-- <div class="text-muted" style="font-size:12px;">
                                         {{ $attempt->quiz->category->name ?? 'Uncategorized' }}
-                                    </div>
+                                    </div> -->
                                 </td>
 
                                 {{-- Score --}}

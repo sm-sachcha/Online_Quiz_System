@@ -127,6 +127,34 @@
         padding: 10px;
         margin-bottom: 10px;
     }
+    .quiz-start-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.78);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        backdrop-filter: blur(6px);
+    }
+    .countdown-box {
+        min-width: 260px;
+        text-align: center;
+        background: #ffffff;
+        border-radius: 20px;
+        padding: 28px 24px;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+    }
+    .countdown-label {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #212529;
+        margin-top: 0;
+    }
+    .countdown-sub {
+        margin-top: 6px;
+        color: #6c757d;
+    }
 </style>
 
 <div class="row mb-3">
@@ -269,18 +297,16 @@
 <script>
     const quizId = {{ $quiz->id }};
     const attemptId = {{ $attempt->id }};
-    const preQuestionCountdownSeconds = 5;
     const totalQuestions = {{ (int) $totalQuestions }};
     let currentQuestionId = {{ $currentQuestion->id }};
     let currentQuestionType = @json($currentQuestion->question_type);
     let currentQuestionDuration = {{ (int) $currentQuestion->time_seconds }};
     let currentQuestionNumber = {{ (int) $currentQuestionNumber }};
-    let questionStartSeconds = {{ (int) $remainingTimeSeconds }};
     let currentShowAnswer = {{ $currentQuestion->show_answer ? 'true' : 'false' }};
-    let timeLeft = parseInt(questionStartSeconds, 10);
+    let questionTiming = @json($questionTiming ?? []);
+    let timeLeft = {{ (int) $remainingTimeSeconds }};
     let timerInterval;
     let answerSubmitted = false;
-    let startTime = null;
     let isInternalNavigation = false;
     let selectedOptions = [];
     let selectedOptionId = null;
@@ -288,7 +314,108 @@
     let attemptHeartbeatInterval = null;
     let leaveSignalSent = false;
     let nextQuestionFallbackTimeout = null;
+    let countdownOverlay = null;
+    let serverTimeOffsetMs = 0;
     const csrfToken = '{{ csrf_token() }}';
+
+    function parseIsoMs(value) {
+        const parsed = Date.parse(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function currentServerNowMs() {
+        return Date.now() + serverTimeOffsetMs;
+    }
+
+    function syncServerClock(serverNowIso) {
+        const serverNowMs = parseIsoMs(serverNowIso);
+        if (serverNowMs !== null) {
+            serverTimeOffsetMs = serverNowMs - Date.now();
+        }
+    }
+
+    function normalizeTiming(timing) {
+        if (!timing || typeof timing !== 'object') {
+            return null;
+        }
+
+        syncServerClock(timing.server_now);
+
+        return {
+            ...timing,
+            countdownStartAtMs: parseIsoMs(timing.countdown_start_at),
+            questionStartAtMs: parseIsoMs(timing.question_start_at),
+            questionEndAtMs: parseIsoMs(timing.question_end_at),
+            countdownSeconds: Number(timing.countdown_seconds || 5),
+            delayGraceSeconds: Number(timing.delay_grace_seconds || 2),
+        };
+    }
+
+    function applyTiming(timing) {
+        const normalized = normalizeTiming(timing);
+        if (!normalized) {
+            return;
+        }
+
+        questionTiming = normalized;
+    }
+
+    function removeCountdownOverlay() {
+        if (!countdownOverlay) {
+            return;
+        }
+
+        countdownOverlay.remove();
+        countdownOverlay = null;
+    }
+
+    function showCountdownOverlay(secondsLeft) {
+        const safeSeconds = Math.max(0, Math.ceil(secondsLeft));
+
+        if (!countdownOverlay) {
+            countdownOverlay = document.createElement('div');
+            countdownOverlay.className = 'quiz-start-overlay';
+            countdownOverlay.innerHTML = `
+                <div class="countdown-box">
+                    <div id="questionStartCountdownNumber" style="display:none;">${safeSeconds}</div>
+                    <div class="countdown-label">Question Starting</div>
+                    <div class="countdown-sub" id="questionStartCountdownSub">Get ready to answer...</div>
+                </div>
+            `;
+            document.body.appendChild(countdownOverlay);
+            return;
+        }
+
+        const countEl = countdownOverlay.querySelector('#questionStartCountdownNumber');
+        if (countEl) {
+            countEl.textContent = safeSeconds;
+        }
+
+        const subEl = countdownOverlay.querySelector('#questionStartCountdownSub');
+        if (subEl) {
+            subEl.textContent = safeSeconds > 0
+                ? 'Get ready to answer...'
+                : 'Starting now...';
+        }
+    }
+
+    function getQuestionPhase() {
+        if (!questionTiming) {
+            return 'question';
+        }
+
+        const nowMs = currentServerNowMs();
+
+        if (questionTiming.questionStartAtMs !== null && nowMs < questionTiming.questionStartAtMs) {
+            return 'countdown';
+        }
+
+        if (questionTiming.questionEndAtMs !== null && nowMs < questionTiming.questionEndAtMs) {
+            return 'question';
+        }
+
+        return 'ended';
+    }
 
     function redirectToResult(url = `/user/quiz/result/${quizId}/${attemptId}`) {
         stopAttemptHeartbeat();
@@ -318,10 +445,13 @@
 
         answerSubmitted = true;
         clearInterval(timerInterval);
+        removeCountdownOverlay();
 
         const safeDuration = parseInt(currentQuestionDuration, 10) || 0;
-        const safeTimeLeft = Math.max(0, parseInt(timeLeft, 10) || 0);
-        const timeTaken = Math.max(0, safeDuration - safeTimeLeft);
+        const elapsedSeconds = questionTiming?.questionStartAtMs !== null
+            ? Math.round((currentServerNowMs() - questionTiming.questionStartAtMs) / 1000)
+            : safeDuration - Math.max(0, parseInt(timeLeft, 10) || 0);
+        const timeTaken = Math.min(safeDuration, Math.max(0, elapsedSeconds));
         document.getElementById('timeTaken').value = timeTaken;
         
         setFormValues();
@@ -419,20 +549,53 @@
         }).catch(() => {});
     }
 
-    // Timer functions
-    function startTimer() {
-        startTime = Date.now();
+    function syncQuestionClock(forceRefresh = false) {
+        if (answerSubmitted || waitingForNextQuestion) {
+            return;
+        }
+
+        const phase = getQuestionPhase();
+        const nowMs = currentServerNowMs();
+        const delayGraceMs = (questionTiming?.delayGraceSeconds || 2) * 1000;
+
+        if (phase === 'countdown') {
+            const secondsUntilStart = Math.max(0, (questionTiming.questionStartAtMs - nowMs) / 1000);
+            timeLeft = currentQuestionDuration;
+            updateTimerDisplay();
+            showCountdownOverlay(secondsUntilStart);
+            return;
+        }
+
+        removeCountdownOverlay();
+
+        if (phase === 'question') {
+            const secondsRemaining = Math.max(0, Math.ceil((questionTiming.questionEndAtMs - nowMs) / 1000));
+            timeLeft = secondsRemaining;
+            updateTimerDisplay();
+            return;
+        }
+
+        timeLeft = 0;
         updateTimerDisplay();
+
+        if (!answerSubmitted) {
+            submitAnswerOnTimerEnd();
+            return;
+        }
+
+        if (forceRefresh || (questionTiming?.questionEndAtMs !== null && nowMs > questionTiming.questionEndAtMs + delayGraceMs)) {
+            stopAttemptHeartbeat();
+            isInternalNavigation = true;
+            window.location.href = `/user/quiz/attempt/${quizId}/${attemptId}`;
+        }
+    }
+
+    function startSynchronizedTimer() {
+        clearInterval(timerInterval);
+        syncQuestionClock();
         timerInterval = setInterval(() => {
-            if (!answerSubmitted && !waitingForNextQuestion) {
-                timeLeft = Math.max(0, parseInt(timeLeft, 10) - 1);
-                updateTimerDisplay();
-                if (timeLeft <= 0) {
-                    clearInterval(timerInterval);
-                    submitAnswerOnTimerEnd();
-                }
-            }
-        }, 1000);
+            syncQuestionClock();
+        }, 250);
     }
 
     function updateTimerDisplay() {
@@ -527,13 +690,12 @@
         currentQuestionDuration = Number(question.time_seconds);
         currentQuestionNumber = Number(question.question_number);
         currentShowAnswer = Boolean(question.show_answer);
-        questionStartSeconds = currentQuestionDuration;
         timeLeft = currentQuestionDuration;
         answerSubmitted = false;
         waitingForNextQuestion = false;
-        startTime = null;
         selectedOptions = [];
         selectedOptionId = null;
+        applyTiming(question.timing || {});
 
         document.getElementById('questionText').textContent = question.question_text;
         document.getElementById('currentQuestionNum').textContent = currentQuestionNumber;
@@ -572,44 +734,11 @@
         const loader = document.getElementById('nextQuestionLoader');
         if (loader) loader.style.display = 'none';
 
-        if (timerInterval) clearInterval(timerInterval);
-        updateTimerDisplay();
+        clearInterval(timerInterval);
         bindOptionHandlers();
         setFormValues();
         hideLoading();
-        showQuestionStartCountdown(preQuestionCountdownSeconds, startTimer);
-    }
-
-    function showQuestionStartCountdown(seconds, onComplete) {
-        let countdown = seconds;
-
-        const overlay = document.createElement('div');
-        overlay.className = 'quiz-start-overlay';
-        overlay.innerHTML = `
-            <div class="countdown-box">
-                <div class="countdown-number" id="questionStartCountdownNumber">${countdown}</div>
-                <div class="countdown-label">Question Starting</div>
-                <div class="countdown-sub">Get ready to answer...</div>
-            </div>
-        `;
-
-        document.body.appendChild(overlay);
-
-        const interval = setInterval(() => {
-            countdown--;
-            const countEl = document.getElementById('questionStartCountdownNumber');
-            if (countEl) {
-                countEl.textContent = Math.max(countdown, 0);
-            }
-
-            if (countdown <= 0) {
-                clearInterval(interval);
-                overlay.remove();
-                if (typeof onComplete === 'function') {
-                    onComplete();
-                }
-            }
-        }, 1000);
+        startSynchronizedTimer();
     }
 
     function showFeedback(isCorrect, pointsEarned, explanation, correctAnswerText) {
@@ -745,6 +874,13 @@
             clearTimeout(nextQuestionFallbackTimeout);
         }
 
+        if (data.next_question) {
+            nextQuestionFallbackTimeout = setTimeout(() => {
+                renderQuestion(data.next_question);
+            }, 2000);
+            return;
+        }
+
         nextQuestionFallbackTimeout = setTimeout(() => {
             if (data.is_completed) {
                 redirectToResult();
@@ -759,10 +895,12 @@
 
     bindOptionHandlers();
     startAttemptHeartbeat();
+    applyTiming(questionTiming);
 
     // Handle page leave
     window.addEventListener('beforeunload', function() {
         if (timerInterval) clearInterval(timerInterval);
+        removeCountdownOverlay();
         notifyAttemptLeave();
     });
 
@@ -788,6 +926,11 @@
                 },
                 body: JSON.stringify({ attempt_id: attemptId, action: 'blur' })
             }).catch(() => {});
+            return;
+        }
+
+        if (!document.hidden) {
+            syncQuestionClock(true);
         }
     });
 
@@ -807,6 +950,7 @@
                     answerSubmitted = true;
 
                     if (timerInterval) clearInterval(timerInterval);
+                    removeCountdownOverlay();
 
                     showNotification('The quiz was ended by the admin.', 'warning');
 
@@ -857,12 +1001,10 @@
         }
     }
 
-    timeLeft = parseInt(questionStartSeconds, 10);
-    updateTimerDisplay();
-    showQuestionStartCountdown(preQuestionCountdownSeconds, startTimer);
+    startSynchronizedTimer();
     
-    console.log('Quiz session initialized - Auto-submit on timer end', {
-        quizId, attemptId, currentQuestionId, questionStartSeconds, currentQuestionType
+    console.log('Quiz session initialized with synchronized timer', {
+        quizId, attemptId, currentQuestionId, currentQuestionType, questionTiming
     });
 </script>
 @endpush
