@@ -57,3 +57,46 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+## Deployment Notes
+
+To run this project on `https://zynquiz.shadhinlab.xyz` with Laravel Reverb, make sure the browser-facing Reverb values and the server-side Reverb values stay separate.
+
+Production `.env` essentials:
+
+```env
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://zynquiz.shadhinlab.xyz
+
+BROADCAST_CONNECTION=reverb
+REVERB_HOST=127.0.0.1
+REVERB_PORT=8080
+REVERB_SCHEME=http
+REVERB_SERVER_HOST=0.0.0.0
+REVERB_SERVER_PORT=8080
+
+VITE_REVERB_APP_KEY="${REVERB_APP_KEY}"
+VITE_REVERB_HOST=zynquiz.shadhinlab.xyz
+VITE_REVERB_PORT=443
+VITE_REVERB_SCHEME=https
+```
+
+Server config templates are included here:
+
+- `deploy/nginx/zynquiz.shadhinlab.xyz.conf`
+- `deploy/supervisor/reverb.conf`
+
+After updating env values on the server:
+
+```bash
+php artisan optimize:clear
+npm run build
+php artisan migrate --force
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl restart online-quiz-reverb
+sudo systemctl reload nginx
+```
+
+If the domain returns a WordPress-style `wp_die` error during WebSocket use, the domain or proxy is still pointing to the wrong backend instead of this Laravel + Reverb stack.
