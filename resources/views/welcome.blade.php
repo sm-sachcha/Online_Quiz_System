@@ -21,11 +21,11 @@
         </div>
         @guest
         @else
-            <div class="mt-4">
-                <a href="{{ route('user.dashboard') }}" class="btn btn-primary btn-lg">
+            <!-- <div class="mt-4">
+                <a href="{{ route('admin.dashboard') }}" class="btn btn-primary btn-lg">
                     <i class="fas fa-tachometer-alt"></i> Go to Dashboard
                 </a>
-            </div>
+            </div> -->
         @endguest
     </div>
 </div>
