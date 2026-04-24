@@ -271,7 +271,6 @@ class QuizService
             }
             
             $attempt->score += $pointsEarned;
-            $attempt->total_points += $pointsEarned;
             $attempt->save();
             
             Log::info('Multiple choice answer submitted', [
