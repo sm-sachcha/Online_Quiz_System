@@ -596,6 +596,8 @@ class QuizAttemptController extends Controller
                 $request->time_taken
             );
 
+            $attempt = $attempt->fresh();
+
             broadcast(new AnswerSubmitted($answer))->toOthers();
 
             $totalQuestions = (int) ($attempt->total_questions ?: $quiz->questions()->count());
@@ -623,6 +625,7 @@ class QuizAttemptController extends Controller
                 $this->broadcastAttemptResultUpdated($quiz, $attempt);
             } else {
                 $attempt->touch();
+                $attempt = $attempt->fresh();
                 $this->broadcastParticipantsUpdated($quiz);
                 $this->broadcastNextAttemptQuestion($quiz, $attempt);
             }
@@ -775,6 +778,8 @@ class QuizAttemptController extends Controller
                     'ended_at' => now()
                 ]);
 
+                $attempt = $attempt->fresh();
+
                 $this->clearGuestLobbyIdentityIfNeeded($attempt);
                 
                 // IMPORTANT: Update participant status to 'completed'
@@ -790,6 +795,7 @@ class QuizAttemptController extends Controller
                 $this->broadcastAttemptResultUpdated($quiz, $attempt);
             } else {
                 $attempt->touch();
+                $attempt = $attempt->fresh();
                 $this->broadcastParticipantsUpdated($quiz);
                 $this->broadcastNextAttemptQuestion($quiz, $attempt);
             }

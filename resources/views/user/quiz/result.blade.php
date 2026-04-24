@@ -214,7 +214,7 @@
                                     <td width="40%"><strong>Quiz Title:</strong></td>
                                     <td><strong>{{ $attempt->quiz->title }}</strong></td>
                                   </tr>
-                                  <tr>
+                                  <!-- <tr>
                                     <td width="40%"><strong>Category:</strong></td>
                                     <td>
                                         @if($attempt->quiz->category)
@@ -228,7 +228,7 @@
                                             </span>
                                         @endif
                                     </td>
-                                  </tr>
+                                  </tr> -->
                                   <tr>
                                     <td width="40%"><strong>Started:</strong></td>
                                     <td>{{ optional($performanceMetrics['quiz_started_at'] ?? null)?->format('M d, Y h:i A') ?? $attempt->started_at->format('M d, Y h:i A') }}</td>
@@ -249,7 +249,7 @@
                                         <span class="time-display text-primary">{{ $timeDisplay }}</span>
                                     </td>
                                   </tr>
-                                  <tr>
+                                  <!-- <tr>
                                     <td width="40%"><strong>Avg Time/Question:</strong></td>
                                     <td>
                                         @php
@@ -260,7 +260,7 @@
                                         @endphp
                                         {{ $avgDisplay }}
                                     </td>
-                                  </tr>
+                                  </tr> -->
                               </table>
                         </div>
                         

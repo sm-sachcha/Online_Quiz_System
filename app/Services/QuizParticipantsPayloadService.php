@@ -58,7 +58,15 @@ class QuizParticipantsPayloadService
 
         $participants = QuizParticipant::with('user')
             ->where('quiz_id', $quiz->id)
-            ->orderByRaw("FIELD(status, 'joined', 'taking_quiz', 'completed', 'left')")
+            ->orderByRaw("
+                CASE status
+                    WHEN 'joined' THEN 0
+                    WHEN 'taking_quiz' THEN 1
+                    WHEN 'completed' THEN 2
+                    WHEN 'left' THEN 3
+                    ELSE 4
+                END
+            ")
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($participant) use (
