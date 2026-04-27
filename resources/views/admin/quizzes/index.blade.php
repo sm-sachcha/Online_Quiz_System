@@ -49,7 +49,7 @@
                         <table class="table table-hover">
                             <thead>
                                 <tr>
-                                    <th>ID</th>
+                                    <!-- <th>ID</th> -->
                                     <th class="text-center">Title</th>
                                     <!-- <th>Category</th> -->
                                     <th class="text-center">Questions</th>
@@ -62,7 +62,7 @@
                             <tbody>
                                 @foreach($quizzes as $quiz)
                                     <tr>
-                                        <td>{{ $quiz->id }}</td>
+                                        <!-- <td>{{ $quiz->id }}</td> -->
                                         <td>
                                             <strong>{{ $quiz->title }}</strong>
                                             <br>
