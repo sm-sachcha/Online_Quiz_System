@@ -335,14 +335,17 @@
                 return null;
             }
 
-            const configuredHost = '{{ env('VITE_REVERB_HOST') }}' || window.location.hostname;
+            const appUrl = ('{{ env('VITE_APP_URL', env('APP_URL')) }}' || window.location.origin).replace(/\/$/, '');
+            const appOrigin = new URL(appUrl, window.location.origin);
+            const configuredHost = '{{ env('VITE_REVERB_HOST') }}' || appOrigin.hostname;
             const websocketHost = ['127.0.0.1', 'localhost', '0.0.0.0'].includes(configuredHost)
-                ? window.location.hostname
+                ? appOrigin.hostname
                 : configuredHost;
             const pageScheme = window.location.protocol === 'https:' ? 'https' : 'http';
-            const defaultPort = window.location.port
-                ? Number(window.location.port)
-                : (pageScheme === 'https' ? 443 : 80);
+            const reverbScheme = ('{{ env('VITE_REVERB_SCHEME') }}' || appOrigin.protocol.replace(':', '') || pageScheme);
+            const defaultPort = appOrigin.port
+                ? Number(appOrigin.port)
+                : (reverbScheme === 'https' ? 443 : 80);
 
             window.__quizEchoInstance = new EchoConstructor({
                 broadcaster: 'reverb',
@@ -350,8 +353,8 @@
                 wsHost: websocketHost,
                 wsPort: Number('{{ env('VITE_REVERB_PORT') }}' || defaultPort),
                 wssPort: Number('{{ env('VITE_REVERB_PORT') }}' || defaultPort),
-                forceTLS: ('{{ env('VITE_REVERB_SCHEME') }}' || pageScheme) === 'https',
-                authEndpoint: '/broadcasting/auth',
+                forceTLS: reverbScheme === 'https',
+                authEndpoint: `${appOrigin.origin}/broadcasting/auth`,
                 enabledTransports: ['ws', 'wss'],
                 disableStats: true,
             });

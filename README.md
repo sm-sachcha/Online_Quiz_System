@@ -60,6 +60,15 @@ The Laravel framework is open-sourced software licensed under the [MIT license](
 
 ## Deployment Notes
 
+## Hostinger Compatibility
+
+This app can be uploaded to Hostinger, but the hosting type matters:
+
+- Hostinger Web Hosting / Cloud Hosting: basic Laravel pages can run, but this project's real-time quiz features use Laravel Reverb / WebSockets and queued background work. Hostinger's support docs say Web and Cloud hosting do not allow incoming WebSocket connections, so the live quiz features will not work correctly there.
+- Hostinger VPS: full deployment is supported. This is the recommended Hostinger option for this project.
+
+If you deploy on Hostinger shared hosting anyway, expect broken or missing real-time updates for quiz lobby, countdowns, leaderboard sync, participant events, and other broadcast-driven features.
+
 To run this project on `https://zynquiz.shadhinlab.xyz` with Laravel Reverb, make sure the browser-facing Reverb values and the server-side Reverb values stay separate.
 
 Production `.env` essentials:
@@ -86,6 +95,20 @@ Server config templates are included here:
 
 - `deploy/nginx/zynquiz.shadhinlab.xyz.conf`
 - `deploy/supervisor/reverb.conf`
+- `deploy/supervisor/queue-worker.conf`
+
+## CloudPanel Deployment
+
+CloudPanel is a supported deployment target for this project because it can run the full Laravel + Reverb stack on a VPS.
+
+Use these repo files as your deployment references:
+
+- `deploy/cloudpanel/README.md`
+- `deploy/nginx/zynquiz.shadhinlab.xyz.conf`
+- `deploy/supervisor/reverb.conf`
+- `deploy/supervisor/queue-worker.conf`
+
+Important: this app needs both Reverb and the queue worker running in the background. If only the website is online but those processes are missing, the quiz app will partially load but real-time updates and queued listeners will fail.
 
 After updating env values on the server:
 
@@ -93,8 +116,10 @@ After updating env values on the server:
 php artisan optimize:clear
 npm run build
 php artisan migrate --force
+php artisan storage:link
 sudo supervisorctl reread
 sudo supervisorctl update
+sudo supervisorctl restart online-quiz-queue
 sudo supervisorctl restart online-quiz-reverb
 sudo systemctl reload nginx
 ```
